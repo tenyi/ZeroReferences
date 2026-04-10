@@ -12,10 +12,8 @@ namespace ZeroReferences
         [STAThread]
         static void Main()
         {
-            // 初始化應用程式配置（高 DPI 設定、預設字體等）
+            // 初始化應用程式配置（高 DPI 設定、預設字體、視覺化樣式等）
             ApplicationConfiguration.Initialize();
-            // 啟用 Windows 視覺化樣式（XP/Vista 風格）
-            Application.EnableVisualStyles();
             // 執行應用程式並指定主視窗為 MainForm
             Application.Run(new MainForm());
         }

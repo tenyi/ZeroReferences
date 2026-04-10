@@ -14,7 +14,7 @@ namespace ZeroReferences
         /// <summary>
         /// 訊息標籤，用於顯示提示文字。
         /// </summary>
-        private Label labelMessage;
+        private Label labelMessage = null!;
 
         // ===== 建構函式 =====
 
@@ -34,28 +34,7 @@ namespace ZeroReferences
         {
             InitializeComponent();
             // 設定訊息標籤的文字內容
-            labelMessage.Text = text;
-        }
-
-        // ===== 公開方法 =====
-
-        /// <summary>
-        /// 顯示對話框並回傳對話結果。
-        /// 此方法覆寫基底類別的 ShowDialog，確保對話框以模態方式顯示。
-        /// </summary>
-        /// <returns>對話框關閉後的結果 (DialogResult)。</returns>
-        public new DialogResult ShowDialog()
-        {
-            return base.ShowDialog();
-        }
-
-        /// <summary>
-        /// 關閉對話框。
-        /// 此方法覆寫基底類別的 Close，確保對話框正確關閉。
-        /// </summary>
-        public new void Close()
-        {
-            base.Close();
+            labelMessage!.Text = text;
         }
 
         // ===== 私有方法 =====
@@ -105,7 +84,7 @@ namespace ZeroReferences
             // 設定表單邊框樣式：固定對話框（不可調整大小）
             FormBorderStyle = FormBorderStyle.FixedDialog;
             // 設定視窗圖示
-            Icon = (Icon)resources.GetObject("$this.Icon");
+            Icon = (Icon?)resources.GetObject("$this.Icon")!;
             // 隱藏最大化按鈕
             MaximizeBox = false;
             // 隱藏最小化按鈕

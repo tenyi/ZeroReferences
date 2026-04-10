@@ -37,3 +37,12 @@
 ## 💡 開發建議 (Developer Notes)
 *   **可維護性**: 由於使用 Roslyn 進行深度代碼分析，此部分邏輯較為複雜，建議將核心分析邏輯與 UI 層徹底分開，目前的架構已經做到這一點。
 *   **擴展性**: 若未來需要檢查其他語法元素（如未被使用的成員變數或欄位），可參考 `ReferenceChecker.cs` 的結構，擴展分析的 `Symbol` 類型即可。
+
+## 🔧 建置指令 (Build Commands)
+```bash
+# 建置專案
+dotnet build ZeroReferences.slnx /p:Configuration=Debug /p:Platform="Any CPU"
+
+# 清除建置產出
+dotnet clean ZeroReferences.slnx /p:Configuration=Debug /p:Platform="Any CPU"
+```

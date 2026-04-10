@@ -45,12 +45,9 @@ namespace ZeroReferences
             }
 
             // ===== 建立工作區並開啟解決方案 =====
-            // 使用 MSBuildWorkspace 建立工作區，用於開啟 .sln 檔案
-            var workspace = MSBuildWorkspace.Create();
+            // 使用 using 確保工作區資源正確釋放，避免檔案鎖定與記憶體洩漏
+            using var workspace = MSBuildWorkspace.Create();
             var solution = await workspace.OpenSolutionAsync(solutionPath);
-
-            // 記錄每個方法被引用的次數（方法名稱 -> 引用次數）
-            Dictionary<string, int> methodReferenceCounts = new Dictionary<string, int>();
 
             // ===== 遍歷解決方案中的每個專案 =====
             foreach (var project in solution.Projects)
@@ -88,15 +85,9 @@ namespace ZeroReferences
                     // 只檢查 public 方法（排除 private、protected、internal 等）
                     if (symbol.DeclaredAccessibility == Microsoft.CodeAnalysis.Accessibility.Public)
                     {
-                        // 使用 SymbolFinder 在整個解決方案中查詢此方法的所有引用位置
-                        var references = await SymbolFinder.FindReferencesAsync(symbol, solution);
-                        // 計算引用次數（每個引用位置算一次）
-                        var referenceCount = references.Sum(r => r.Locations.Count());
-
                         // 組合完整的方法識別名稱（包含類型）：例如 "MyClass.MyMethod"
                         string name = $"{symbol.ContainingType.ToDisplayString()}.{symbol.Name}";
 
-                        // ===== 過濾不需要檢查的方法 =====
                         // 跳過 Controller 類別中的方法（通常是 MVC/Web API 的控制器方法）
                         if (name.Contains("Controller"))
                         {
@@ -108,22 +99,13 @@ namespace ZeroReferences
                             continue;
                         }
 
-                        // ===== 累計方法的引用次數 =====
-                        if (methodReferenceCounts.ContainsKey(name))
-                        {
-                            // 若方法已存在於字典中，累加引用次數
-                            methodReferenceCounts[name] += referenceCount;
-                        }
-                        else
-                        {
-                            // 若方法不存在於字典中，新增記錄
-                            methodReferenceCounts[name] = referenceCount;
-                        }
+                        // 使用 SymbolFinder 在整個解決方案中查詢此方法的所有引用位置
+                        var references = await SymbolFinder.FindReferencesAsync(symbol, solution);
+                        var referenceCount = references.Sum(r => r.Locations.Count());
 
-                        // ===== 判定是否為未參照方法 =====
+                        // 引用次數為 0，表示此方法是孤兒方法
                         if (referenceCount == 0)
                         {
-                            // 引用次數為 0，表示此方法是孤兒方法，加入結果清單
                             list.Add(name);
                             Console.WriteLine($"Method '{name}' has no references.");
                         }

@@ -17,7 +17,7 @@ namespace ZeroReferences
         /// <summary>
         /// 目前選取的解決方案檔案路徑。
         /// </summary>
-        private string solutionPath;
+        private string solutionPath = null!;
 
         /// <summary>
         /// 用於顯示「檢查中」提示的模態對話框執行個體。
@@ -42,35 +42,38 @@ namespace ZeroReferences
         /// <param name="e">事件參數。</param>
         private async void checkProjectButton_Click(object sender, EventArgs e)
         {
-            // ===== 清空之前的結果 =====
             resultListBox.Items.Clear();
+            // 防止重複點擊
+            checkProjectButton.Enabled = false;
 
-            // ===== 在背景執行緒顯示「檢查中」對話框 =====
+            // 在背景執行緒顯示「檢查中」對話框
             // 注意：ShowDialog 會封鎖 UI，因此必須在背景執行緒執行
+#pragma warning disable CS4014
             Task.Run(() => (this.Invoke((MethodInvoker)delegate {
                 dialog.ShowDialog();
             })));
+#pragma warning restore CS4014
 
-            // ===== 執行參照檢查（此為非同步作業）=====
+            // 執行參照檢查（此為非同步作業）
             var result = await ReferenceChecker.Check(solutionPath);
 
-            // ===== 在背景執行緒隱藏「檢查中」對話框 =====
-            Task.Run(() => this.Invoke((MethodInvoker)delegate {
-                dialog.Hide();
-            }));
+            // 關閉對話框
+            this.Invoke((MethodInvoker)delegate {
+                dialog.Close();
+            });
 
-            // ===== 顯示檢查結果 =====
+            // 顯示檢查結果
             if (result != null)
             {
-                // 彈出訊息方塊，顯示找到的未參照方法數量
                 MessageBox.Show($"檢查完成，計有 {result.Count} 個未參照方法。");
 
-                // 將每個未參照的方法名稱加入清單方塊顯示
                 foreach (var item in result)
                 {
                     resultListBox.Items.Add(item);
                 }
             }
+
+            checkProjectButton.Enabled = true;
         }
 
         /// <summary>

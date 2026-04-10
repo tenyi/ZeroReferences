@@ -15,17 +15,17 @@ namespace ZeroReferences
         /// <summary>
         /// 選擇解決方案檔案的按鈕。
         /// </summary>
-        private Button selectSolutionButton;
+        private Button selectSolutionButton = null!;
 
         /// <summary>
         /// 執行專案檢查的按鈕。
         /// </summary>
-        private Button checkProjectButton;
+        private Button checkProjectButton = null!;
 
         /// <summary>
         /// 目前選取的解決方案檔案路徑。
         /// </summary>
-        private string solutionPath;
+        private string solutionPath = null!;
 
         // ===== 建構函式 =====
 
@@ -78,7 +78,7 @@ namespace ZeroReferences
         /// </summary>
         /// <param name="sender">事件來源物件（按鈕）。</param>
         /// <param name="e">事件參數。</param>
-        private void SelectSolutionButton_Click(object sender, EventArgs e)
+        private void SelectSolutionButton_Click(object? sender, EventArgs e)
         {
             // 建立開啟檔案對話框
             using (OpenFileDialog openFileDialog = new OpenFileDialog())
@@ -116,10 +116,12 @@ namespace ZeroReferences
         /// </summary>
         /// <param name="sender">事件來源物件（按鈕）。</param>
         /// <param name="e">事件參數。</param>
-        private void CheckProjectButton_Click(object sender, EventArgs e)
+        private void CheckProjectButton_Click(object? sender, EventArgs e)
         {
-            // 呼叫 ReferenceChecker 執行檢查
-            ReferenceChecker.Check(solutionPath);
+            // 呼叫 ReferenceChecker 執行檢查（fire-and-forget）
+#pragma warning disable CS4014
+            ReferenceChecker.Check(solutionPath!);
+#pragma warning restore CS4014
         }
 
         // ===== 私有方法 =====
@@ -138,7 +140,7 @@ namespace ZeroReferences
 
             // 設定對話框屬性
             ClientSize = new Size(866, 538);
-            Icon = (Icon)resources.GetObject("$this.Icon");
+            Icon = (Icon?)resources.GetObject("$this.Icon")!;
             Name = "SolutionDialog";
             StartPosition = FormStartPosition.CenterScreen;
 
