@@ -10,39 +10,45 @@
 *   **UI**: 傳統 WinForms 介面。
 
 ## 🧱 專案架構概覽
-專案主要由三個核心檔案組成：
 
-1.  **`MainForm.cs`**:
-    *   **職責**: 負責使用者介面 (UI) 互動。
-    *   **流程**: 監聽使用者點擊「選擇 Solution 檔案」，載入 `.sln` 路徑到 `solutionPath` 變數中。點擊「檢查專案」後，會啟動異步任務，調用 `ReferenceChecker.Check(solutionPath)` 方法，並在結果列表中顯示所有未參照的方法。
+### 核心檔案（3 個）
 
-2.  **`ReferenceChecker.cs`**:
-    *   **職責**: 這是專案的核心分析引擎。
-    *   **關鍵步驟**:
-        1.  透過 `MSBuildWorkspace` 開啟整個 `.sln` 解決方案。
-        2.  遍歷所有專案中的所有文件，提取所有方法宣告 (`MethodDeclarationSyntax`)。
-        3.  對於每個方法，使用 `SymbolFinder.FindReferencesAsync` 查詢其在整個解決方案中的引用總次數。
-        4.  如果引用次數為零，則判定為「未參照方法」，並將其名稱（包含類別全限定名）記錄下來。
-    *   **優化點**: 程式碼已包含邏輯排除掉 `Controller` 和 `Test` 相關的方法，以避免誤判。
+| 檔案 | 職責 | 備註 |
+|------|------|------|
+| **`MainForm.cs`** | UI 互動、選擇 .sln 檔案、顯示結果 | 目前主要 UI，透過 Designer 檔案掛載控制項 |
+| **`ReferenceChecker.cs`** | 核心分析引擎，使用 Roslyn 逐一檢查方法引用次數 | `Check()` 為靜態 async 方法，回傳 `List<string>` |
+| **`ModalDialog.cs`** | 長時作業期間的等待提示框 | `ShowInTaskbar = false`，避免在工作列出現 |
 
-3.  **`ModalDialog.cs`**:
-    *   **職責**: 專案的狀態提示。在長時間運算的過程中，用來顯示「檢查中，請稍候...」的訊息，提升使用者體驗。
+### 附屬檔案
 
-## 🚀 核心操作流程 (Workflow)
-1.  **準備**: 確保使用者已準備好目標專案的 `.sln` 檔案。
-2.  **輸入**: 使用者點擊介面上的按鈕，選擇包含目標專案的 `.sln` 檔案。
-3.  **執行**: 程式進入背景檢查流程，執行 Roslyn 分析。
-4.  **輸出**: 檢查完成後，UI 會彈出一個包含所有**孤兒方法**清單的結果視窗。
+- **`Program.cs`**：應用程式 entry point，建立並執行 `MainForm`。
+- **`SolutionDialog.cs`**：早期版本的 UI（已被 `MainForm` 取代），現為備用，可刪除。
+- **`MainForm.Designer.cs`**：由 WinForms 設計工具產生，定義 UI 控制項配置，**請勿手動編輯**。
 
-## 💡 開發建議 (Developer Notes)
-*   **可維護性**: 由於使用 Roslyn 進行深度代碼分析，此部分邏輯較為複雜，建議將核心分析邏輯與 UI 層徹底分開，目前的架構已經做到這一點。
-*   **擴展性**: 若未來需要檢查其他語法元素（如未被使用的成員變數或欄位），可參考 `ReferenceChecker.cs` 的結構，擴展分析的 `Symbol` 類型即可。
+### 依賴套件（NuGet）
 
-## 🔧 建置指令 (Build Commands)
+- `Microsoft.CodeAnalysis`（Roslyn）：用於符號查找與語法樹分析。
+
+## 🔍 分析邏輯（ReferenceChecker.Check）
+
+1. `MSBuildWorkspace.OpenSolutionAsync()` 開啟整個 .sln
+2. 遍歷每個專案的文件，收集所有 `MethodDeclarationSyntax` 節點
+3. 對每個 `public` 方法，呼叫 `SymbolFinder.FindReferencesAsync()` 計算引用次數
+4. 引用數 = 0 且方法名稱不含 `Controller`/`Test` 者，判定為「孤兒方法」
+
+### 排除邏輯
+- `Controller`：MVC/Web API 控制器方法，通常由路由呼叫，不計入
+- `Test`：測試類別方法，測試本身的引用不視為實際使用
+
+## 🔧 建置與執行指令
+
 ```bash
-# 建置專案
+# 建置（使用 slnx 格式）
 dotnet build ZeroReferences.slnx /p:Configuration=Debug /p:Platform="Any CPU"
 
 # 清除建置產出
 dotnet clean ZeroReferences.slnx /p:Configuration=Debug /p:Platform="Any CPU"
+
+# 執行（位於 obj\Debug\net10.0-windows8.0\ZeroReferences.exe）
+dotnet run --project ZeroReferences
 ```

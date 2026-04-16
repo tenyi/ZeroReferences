@@ -1,8 +1,4 @@
-using System;
-using System.Windows.Forms;
-using System.Drawing;
-
-namespace ZeroReferences
+﻿namespace ZeroReferences
 {
     /// <summary>
     /// 解決方案選擇對話框類別，提供選擇 .sln 檔案及初步檢查的功能。
@@ -84,26 +80,29 @@ namespace ZeroReferences
             using (OpenFileDialog openFileDialog = new OpenFileDialog())
             {
                 // 設定檔案類型篩選器：只顯示 .sln 檔案
-                openFileDialog.Filter = "Solution Files (*.sln)|*.sln";
+                openFileDialog.Filter = "Solution Files (*.sln;*.slnx)|*.sln;*.slnx";
                 openFileDialog.Title = "Select a Solution File";
 
                 // 顯示對話框並取得使用者選擇的結果
                 var result = openFileDialog.ShowDialog();
 
                 // ===== 驗證使用者的選擇 =====
-                if (result == DialogResult.OK &&
-                    // 確認副檔名為 .sln（不區分大小寫）
-                    System.IO.Path.GetExtension(openFileDialog.FileName).Equals(".sln", StringComparison.OrdinalIgnoreCase))
+                if (result == DialogResult.OK)
                 {
-                    // 儲存選取的檔案路徑
-                    solutionPath = openFileDialog.FileName;
-                    // 啟用「檢查專案」按鈕
-                    checkProjectButton.Enabled = true;
+                    // 確認副檔名為 .sln/.slnx（不區分大小寫）
+                    string ext = Path.GetExtension(openFileDialog.FileName).ToLower();
+                    if (ext == ".sln" || ext == ".slnx")
+                    {
+                        // 儲存選取的檔案路徑
+                        solutionPath = openFileDialog.FileName;
+                        // 啟用「檢查專案」按鈕
+                        checkProjectButton.Enabled = true;
+                    }
                 }
                 else
                 {
                     // 若選擇無效，顯示警告訊息
-                    MessageBox.Show("Please select a valid .sln file.", "Invalid File", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show("Please select a valid .sln/.slnx file.", "Invalid File", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     // 停用「檢查專案」按鈕
                     checkProjectButton.Enabled = false;
                 }
