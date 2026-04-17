@@ -37,6 +37,17 @@ namespace ZeroReferences
             labelMessage!.Text = text;
         }
 
+        // ===== 公開方法 =====
+
+        /// <summary>
+        /// 更新對話框中顯示的訊息文字。
+        /// </summary>
+        /// <param name="message">要顯示的新訊息。</param>
+        public void SetMessage(string message)
+        {
+            labelMessage!.Text = message;
+        }
+
         // ===== 私有方法 =====
 
         /// <summary>

@@ -24,6 +24,8 @@
         public MainForm()
         {
             InitializeComponent();
+            // 訂閱 ListBox 的選取變更事件，控制移除按鈕的啟用狀態
+            resultListBox.SelectedIndexChanged += resultListBox_SelectedIndexChanged;
         }
 
         // ===== 事件處理常式 =====
@@ -116,6 +118,98 @@
                     checkProjectButton.Enabled = false;
                 }
             }
+        }
+
+        /// <summary>
+        /// 處理 ListBox 選取項目變更的事件。
+        /// 當有選取項目時啟用「移除方法」按鈕，無選取時停用。
+        /// </summary>
+        /// <param name="sender">事件來源物件。</param>
+        /// <param name="e">事件參數。</param>
+        private void resultListBox_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            // 只有在有選取項目時才啟用移除按鈕
+            removeMethodButton.Enabled = resultListBox.SelectedItems.Count > 0;
+        }
+
+        /// <summary>
+        /// 處理「移除方法」按鈕的點擊事件。
+        /// 支援多選刪除，批次刪除所有選取的未參照方法。
+        /// 若方法有實作介面也會一併刪除介面中的方法宣告。
+        /// </summary>
+        /// <param name="sender">事件來源物件（按鈕）。</param>
+        /// <param name="e">事件參數。</param>
+        private async void removeMethodButton_Click(object sender, EventArgs e)
+        {
+            // 取得所有選取的方法簽名
+            var selectedItems = resultListBox.SelectedItems;
+            if (selectedItems.Count == 0) return;
+
+            // 收集選取的簽名清單
+            var signatures = new List<string>();
+            foreach (var item in selectedItems)
+            {
+                signatures.Add(item.ToString()!);
+            }
+
+            // 彈出確認對話框，顯示即將刪除的方法數量及清單
+            string methodList = string.Join("\n", signatures);
+            var confirmResult = MessageBox.Show(
+                $"即將刪除 {signatures.Count} 個方法：\n{methodList}\n\n" +
+                "若有實作介面，介面中的方法也會一併刪除。\n\n" +
+                "確定要繼續嗎？",
+                "確認刪除",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning);
+
+            // 使用者取消
+            if (confirmResult != DialogResult.Yes) return;
+
+            // 停用按鈕防止重複點擊
+            removeMethodButton.Enabled = false;
+            checkProjectButton.Enabled = false;
+
+            // 顯示等待對話框
+            dialog.SetMessage($"刪除 {signatures.Count} 個方法中，請稍候...");
+#pragma warning disable CS4014
+            Task.Run(() => (this.Invoke((MethodInvoker)delegate
+            {
+                dialog.ShowDialog();
+            })));
+#pragma warning restore CS4014
+
+            // 執行批次刪除
+            var (success, message) = await ReferenceChecker.RemoveMethodsAsync(solutionPath, signatures);
+
+            // 關閉等待對話框
+            this.Invoke((MethodInvoker)delegate
+            {
+                dialog.Close();
+            });
+
+            // 顯示結果
+            if (success)
+            {
+                MessageBox.Show(message, "刪除成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                // 重新執行檢查以更新清單
+                resultListBox.Items.Clear();
+                var checkResult = await ReferenceChecker.Check(solutionPath);
+                if (checkResult != null)
+                {
+                    foreach (var item in checkResult)
+                    {
+                        resultListBox.Items.Add(item);
+                    }
+                    MessageBox.Show($"重新檢查完成，計有 {checkResult.Count} 個未參照方法。");
+                }
+            }
+            else
+            {
+                MessageBox.Show(message, "刪除失敗", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+
+            checkProjectButton.Enabled = true;
         }
     }
 }

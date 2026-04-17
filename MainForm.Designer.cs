@@ -31,6 +31,7 @@
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(MainForm));
             selectSolutionButton = new Button();
             checkProjectButton = new Button();
+            removeMethodButton = new Button();
             resultListBox = new ListBox();
             labelSolution = new Label();
             SuspendLayout();
@@ -57,7 +58,19 @@
             checkProjectButton.Text = "檢查專案";
             checkProjectButton.UseVisualStyleBackColor = true;
             checkProjectButton.Click += checkProjectButton_Click;
-            // 
+            //
+            // removeMethodButton
+            //
+            removeMethodButton.Enabled = false;
+            removeMethodButton.Font = new Font("Microsoft JhengHei UI", 12F);
+            removeMethodButton.Location = new Point(890, 61);
+            removeMethodButton.Name = "removeMethodButton";
+            removeMethodButton.Size = new Size(103, 45);
+            removeMethodButton.TabIndex = 4;
+            removeMethodButton.Text = "移除方法";
+            removeMethodButton.UseVisualStyleBackColor = true;
+            removeMethodButton.Click += removeMethodButton_Click;
+            //
             // resultListBox
             // 
             resultListBox.Font = new Font("Microsoft JhengHei UI", 11.25F, FontStyle.Regular, GraphicsUnit.Point, 136);
@@ -65,6 +78,7 @@
             resultListBox.ItemHeight = 19;
             resultListBox.Location = new Point(56, 171);
             resultListBox.Name = "resultListBox";
+            resultListBox.SelectionMode = SelectionMode.MultiExtended;
             resultListBox.Size = new Size(1179, 403);
             resultListBox.TabIndex = 2;
             // 
@@ -84,6 +98,7 @@
             ClientSize = new Size(1278, 608);
             Controls.Add(labelSolution);
             Controls.Add(resultListBox);
+            Controls.Add(removeMethodButton);
             Controls.Add(checkProjectButton);
             Controls.Add(selectSolutionButton);
             Icon = (Icon)resources.GetObject("$this.Icon");
@@ -98,6 +113,7 @@
 
         private Button selectSolutionButton;
         private Button checkProjectButton;
+        private Button removeMethodButton;
         private ListBox resultListBox;
         private Label labelSolution;
     }
