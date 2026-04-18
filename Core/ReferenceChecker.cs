@@ -91,7 +91,7 @@ namespace ZeroReferences
             {
                 // 取得專案的編譯物件（Compilation），用於語意分析
                 var compilation = await project.GetCompilationAsync();
-                if (compilation == null) { throw new ArgumentException("並沒有任何 compilation"); }
+                if (compilation == null) continue;
 
                 // 存放此專案中找到的所有方法宣告
                 var methods = new List<MethodDeclarationSyntax>();
@@ -117,7 +117,7 @@ namespace ZeroReferences
                     var model = compilation.GetSemanticModel(method.SyntaxTree);
                     // 取得方法符號（IMethodSymbol），用於查詢引用
                     var symbol = model.GetDeclaredSymbol(method) as IMethodSymbol;
-                    if (symbol == null) { throw new ArgumentException("並沒有任何 symbol"); }
+                    if (symbol == null) continue;
 
                     // 只檢查目標存取層級的方法（public / private / protected）
                     if (ShouldAnalyzeAccessibility(symbol.DeclaredAccessibility))
@@ -144,7 +144,6 @@ namespace ZeroReferences
                         if (referenceCount == 0)
                         {
                             list.Add(name);
-                            Console.WriteLine($"Method '{name}' has no references.");
                         }
                     }
                 }
@@ -173,6 +172,7 @@ namespace ZeroReferences
 
             // 記錄每個簽名是否找到對應方法
             var foundSignatures = new HashSet<string>();
+            var signatureSet = new HashSet<string>(methodSignatures);
 
             // ===== 遍歷解決方案尋找所有目標方法 =====
             foreach (var project in solution.Projects)
@@ -197,7 +197,7 @@ namespace ZeroReferences
                         string signature = GetMethodSignature(symbol);
 
                         // 比對是否為任一目標簽名
-                        if (methodSignatures.Contains(signature))
+                        if (signatureSet.Contains(signature))
                         {
                             foundSignatures.Add(signature);
 

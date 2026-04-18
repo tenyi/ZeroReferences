@@ -57,6 +57,7 @@
                 <ComboBoxItem Content="全部" />
                 <ComboBoxItem Content="只看 public" />
                 <ComboBoxItem Content="只看 private" />
+                <ComboBoxItem Content="只看 protected" />
             </ComboBox>
         </StackPanel>
 

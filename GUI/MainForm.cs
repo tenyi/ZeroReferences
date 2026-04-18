@@ -21,17 +21,17 @@
         /// </summary>
         private const string AccessibilityFilterPrivateOnly = "只看 private";
 
+        /// <summary>
+        /// 存取層級篩選器：只顯示 protected 方法。
+        /// </summary>
+        private const string AccessibilityFilterProtectedOnly = "只看 protected";
+
         // ===== 私有成員欄位 =====
 
         /// <summary>
         /// 目前選取的解決方案檔案路徑。
         /// </summary>
         private string solutionPath = null!;
-
-        /// <summary>
-        /// 用於顯示「檢查中」提示的模態對話框執行個體。
-        /// </summary>
-        private ModalDialog dialog = new ModalDialog("檢查中，請稍候...");
 
         /// <summary>
         /// 保存最新一次檢查得到的完整方法清單，供 UI 篩選使用。
@@ -86,6 +86,7 @@
             accessibilityFilterComboBox.Items.Add(AccessibilityFilterAll);
             accessibilityFilterComboBox.Items.Add(AccessibilityFilterPublicOnly);
             accessibilityFilterComboBox.Items.Add(AccessibilityFilterPrivateOnly);
+            accessibilityFilterComboBox.Items.Add(AccessibilityFilterProtectedOnly);
             accessibilityFilterComboBox.SelectedIndex = 0;
             accessibilityFilterComboBox.SelectedIndexChanged += accessibilityFilterComboBox_SelectedIndexChanged;
 
@@ -121,7 +122,14 @@
                 }
                 else if (selectedFilter == AccessibilityFilterPrivateOnly)
                 {
-                    if (!methodSignature.StartsWith("private", StringComparison.OrdinalIgnoreCase))
+                    if (!methodSignature.StartsWith("private ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+                }
+                else if (selectedFilter == AccessibilityFilterProtectedOnly)
+                {
+                    if (!methodSignature.StartsWith("protected ", StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
                     }
@@ -145,37 +153,27 @@
         {
             resultListBox.Items.Clear();
             allMethodResults.Clear();
-            // 防止重複點擊
+            // 防止重複點擊並顯示等待游標
             checkProjectButton.Enabled = false;
+            UseWaitCursor = true;
 
-            // 在背景執行緒顯示「檢查中」對話框
-            // 注意：ShowDialog 會封鎖 UI，因此必須在背景執行緒執行
-#pragma warning disable CS4014
-            Task.Run(() => (this.Invoke((MethodInvoker)delegate
+            try
             {
-                dialog.ShowDialog();
-            })));
-#pragma warning restore CS4014
+                var result = await ReferenceChecker.Check(solutionPath);
 
-            // 執行參照檢查（此為非同步作業）
-            var result = await ReferenceChecker.Check(solutionPath);
+                if (result != null)
+                {
+                    MessageBox.Show($"檢查完成，計有 {result.Count} 個未參照方法。");
 
-            // 關閉對話框
-            this.Invoke((MethodInvoker)delegate
-            {
-                dialog.Close();
-            });
-
-            // 顯示檢查結果
-            if (result != null)
-            {
-                MessageBox.Show($"檢查完成，計有 {result.Count} 個未參照方法。");
-
-                allMethodResults.AddRange(result);
-                ApplyAccessibilityFilter();
+                    allMethodResults.AddRange(result);
+                    ApplyAccessibilityFilter();
+                }
             }
-
-            checkProjectButton.Enabled = true;
+            finally
+            {
+                checkProjectButton.Enabled = true;
+                UseWaitCursor = false;
+            }
         }
 
         /// <summary>
@@ -270,50 +268,42 @@
             // 使用者取消
             if (confirmResult != DialogResult.Yes) return;
 
-            // 停用按鈕防止重複點擊
+            // 停用按鈕防止重複點擊並顯示等待游標
             removeMethodButton.Enabled = false;
             checkProjectButton.Enabled = false;
+            UseWaitCursor = true;
 
-            // 顯示等待對話框
-            dialog.SetMessage($"刪除 {signatures.Count} 個方法中，請稍候...");
-#pragma warning disable CS4014
-            Task.Run(() => (this.Invoke((MethodInvoker)delegate
+            try
             {
-                dialog.ShowDialog();
-            })));
-#pragma warning restore CS4014
+                // 執行批次刪除
+                var (success, message) = await ReferenceChecker.RemoveMethodsAsync(solutionPath, signatures);
 
-            // 執行批次刪除
-            var (success, message) = await ReferenceChecker.RemoveMethodsAsync(solutionPath, signatures);
-
-            // 關閉等待對話框
-            this.Invoke((MethodInvoker)delegate
-            {
-                dialog.Close();
-            });
-
-            // 顯示結果
-            if (success)
-            {
-                MessageBox.Show(message, "刪除成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-                // 重新執行檢查以更新清單
-                resultListBox.Items.Clear();
-                allMethodResults.Clear();
-                var checkResult = await ReferenceChecker.Check(solutionPath);
-                if (checkResult != null)
+                // 顯示結果
+                if (success)
                 {
-                    allMethodResults.AddRange(checkResult);
-                    ApplyAccessibilityFilter();
-                    MessageBox.Show($"重新檢查完成，計有 {checkResult.Count} 個未參照方法。");
+                    MessageBox.Show(message, "刪除成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                    // 重新執行檢查以更新清單
+                    resultListBox.Items.Clear();
+                    allMethodResults.Clear();
+                    var checkResult = await ReferenceChecker.Check(solutionPath);
+                    if (checkResult != null)
+                    {
+                        allMethodResults.AddRange(checkResult);
+                        ApplyAccessibilityFilter();
+                        MessageBox.Show($"重新檢查完成，計有 {checkResult.Count} 個未參照方法。");
+                    }
+                }
+                else
+                {
+                    MessageBox.Show(message, "刪除失敗", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
-            else
+            finally
             {
-                MessageBox.Show(message, "刪除失敗", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                checkProjectButton.Enabled = true;
+                UseWaitCursor = false;
             }
-
-            checkProjectButton.Enabled = true;
         }
     }
 }

@@ -25,6 +25,9 @@ public partial class MainWindow : Window
     /// <summary>篩選器：只顯示 private 方法。</summary>
     private const string FilterPrivateOnly = "只看 private";
 
+    /// <summary>篩選器：只顯示 protected 方法。</summary>
+    private const string FilterProtectedOnly = "只看 protected";
+
     // ===== 私有成員欄位 =====
 
     /// <summary>目前選取的解決方案檔案路徑。</summary>
@@ -247,6 +250,8 @@ public partial class MainWindow : Window
                 return method.StartsWith("public ", System.StringComparison.OrdinalIgnoreCase);
             if (selectedItem == FilterPrivateOnly)
                 return method.StartsWith("private", System.StringComparison.OrdinalIgnoreCase);
+            if (selectedItem == FilterProtectedOnly)
+                return method.StartsWith("protected", System.StringComparison.OrdinalIgnoreCase);
             return true;
         }).ToList();
 
