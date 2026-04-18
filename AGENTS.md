@@ -2,7 +2,10 @@
 
 ## 🎯 專案目標
 
-- 本專案是一個基於 **.NET 10 Windows Forms** 的桌面應用程式。其主要目的是增強軟體開發的「程式碼健康度檢查」能力，具體目標是**分析一個 .NET 解決方案 (.sln/.slnx)，並找出其中所有定義為 `public` / `private` / `protected` 且在整個解決方案中沒有被其他程式碼引用的方法**（即「孤兒方法」）。
+- 本專案是一個基於 **.NET 10 Windows Forms** 的應用程式。其主要目的是增強軟體開發的「程式碼健康度檢查」能力，具體目標是**分析一個 .NET 解決方案 (.sln/.slnx)，並找出其中所有定義為 `public` 且在整個解決方案中沒有被其他程式碼引用的方法**（即「孤兒方法」）。
+
+- 桌面版本目錄: GUI
+- 終端機版本目錄: CLI
 
 
 ## 💻 技術堆疊 (Tech Stack)
@@ -45,15 +48,12 @@
 ## 🔧 建置與執行指令
 
 ```bash
-# 建置（使用 slnx 格式；Linux/macOS 需啟用 Windows Targeting）
-dotnet build ZeroReferences.slnx /p:Configuration=Debug /p:Platform="Any CPU" /p:EnableWindowsTargeting=true
+# 建置（使用 slnx 格式）
+dotnet build ZeroReferences.slnx /p:Configuration=Debug /p:Platform="Any CPU"
 
 # 清除建置產出
-dotnet clean ZeroReferences.slnx /p:Configuration=Debug /p:Platform="Any CPU" /p:EnableWindowsTargeting=true
+dotnet clean ZeroReferences.slnx /p:Configuration=Debug /p:Platform="Any CPU"
 
-# 執行（僅 Windows 可啟動 WinForms UI；位於 obj\Debug\net10.0-windows8.0\ZeroReferences.exe）
+# 執行（位於 obj\Debug\net10.0-windows8.0\ZeroReferences.exe）
 dotnet run --project ZeroReferences
-
-# Linux/macOS 說明：可成功還原與編譯，但無法啟動 WinForms UI
-# 請使用上方 build/clean 指令做靜態分析與編譯驗證
 ```

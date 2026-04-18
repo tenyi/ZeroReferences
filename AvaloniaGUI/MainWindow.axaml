@@ -1,0 +1,92 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="ZeroReferences.AvaloniaGUI.MainWindow"
+        Title="檢查 Reference 為零"
+        Width="1000" Height="620"
+        WindowStartupLocation="CenterScreen"
+        CanResize="True">
+
+    <!-- 主佈局：使用 Grid 將各區塊垂直排列 -->
+    <Grid Margin="16" RowDefinitions="Auto,Auto,Auto,*">
+
+        <!-- Row 0：按鈕列 -->
+        <StackPanel Grid.Row="0"
+                    Orientation="Horizontal"
+                    Spacing="12"
+                    Margin="0,0,0,12">
+            <Button x:Name="SelectSolutionButton"
+                    Content="選擇專案"
+                    FontSize="16"
+                    Padding="16,8"
+                    Click="SelectSolutionButton_Click" />
+            <Button x:Name="CheckProjectButton"
+                    Content="檢查專案"
+                    FontSize="16"
+                    Padding="16,8"
+                    IsEnabled="False"
+                    Click="CheckProjectButton_Click" />
+            <Button x:Name="RemoveMethodButton"
+                    Content="移除方法"
+                    FontSize="16"
+                    Padding="16,8"
+                    IsEnabled="False"
+                    Click="RemoveMethodButton_Click" />
+        </StackPanel>
+
+        <!-- Row 1：Solution 路徑顯示 -->
+        <TextBlock x:Name="SolutionPathText"
+                   Grid.Row="1"
+                   FontSize="13"
+                   Margin="0,0,0,8"
+                   TextTrimming="CharacterEllipsis"
+                   Text="" />
+
+        <!-- Row 2：篩選下拉選單 -->
+        <StackPanel Grid.Row="2"
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    Margin="0,0,0,8">
+            <TextBlock Text="篩選存取層級："
+                       FontSize="14"
+                       VerticalAlignment="Center" />
+            <ComboBox x:Name="AccessibilityFilterComboBox"
+                      FontSize="14"
+                      Width="180"
+                      SelectedIndex="0"
+                      SelectionChanged="AccessibilityFilterComboBox_SelectionChanged">
+                <ComboBoxItem Content="全部" />
+                <ComboBoxItem Content="只看 public" />
+                <ComboBoxItem Content="只看 private" />
+            </ComboBox>
+        </StackPanel>
+
+        <!-- Row 3：結果列表（填滿剩餘空間） -->
+        <Border Grid.Row="3"
+                BorderBrush="Gray"
+                BorderThickness="1"
+                CornerRadius="4">
+            <ListBox x:Name="ResultListBox"
+                     SelectionMode="Multiple,Toggle"
+                     SelectionChanged="ResultListBox_SelectionChanged" />
+        </Border>
+
+        <!-- 等待覆蓋層：預設隱藏，檢查/刪除時顯示 -->
+        <Border x:Name="LoadingOverlay"
+                Grid.RowSpan="4"
+                Background="#80000000"
+                IsVisible="False"
+                CornerRadius="4">
+            <Border Background="White"
+                    CornerRadius="8"
+                    Padding="32,24"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+                <TextBlock x:Name="LoadingMessage"
+                           Text="檢查中，請稍候..."
+                           FontSize="18"
+                           Foreground="Black"
+                           HorizontalAlignment="Center" />
+            </Border>
+        </Border>
+    </Grid>
+</Window>

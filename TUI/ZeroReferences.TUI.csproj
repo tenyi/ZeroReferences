@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>ZeroReferences.TUI</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 共用 Core Library -->
+    <ProjectReference Include="..\Core\ZeroReferences.Core.csproj" />
+  </ItemGroup>
+
+</Project>

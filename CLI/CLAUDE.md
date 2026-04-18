@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 專案概述
 
-ZeroReferencesCli 是一個**純命令列 (Console)** 工具，使用 Roslyn 引擎分析 `.sln/.slnx` 檔案，找出其中未被引用的 `public` 方法。這是 `ZeroReferences`（WinForms 版）的 CLI 變體。
+ZeroReferencesCli 是一個**純命令列 (Console)** 工具，使用 Roslyn 引擎分析 `.sln/.slnx` 檔案，找出其中未被引用的 `public` / `private` / `protected` 方法。這是 `ZeroReferences`（WinForms 版）的 CLI 變體。
 
 ## 架構
 
 本專案僅有單一原始檔：
-- **`Program.cs`**: 包含所有邏輯 — 使用 `MSBuildWorkspace` 載入 solution，透過 `SymbolFinder.FindReferencesAsync` 計算每個 `public` 方法的引用次數，最後輸出引用次數為 0 且名稱不含 "Controller" 的方法。
+- **`Program.cs`**: 包含所有邏輯 — 使用 `MSBuildWorkspace` 載入 solution，透過 `SymbolFinder.FindReferencesAsync` 計算每個 `public` / `private` / `protected` 方法的引用次數，最後輸出引用次數為 0 且名稱不含 "Controller" / "Test" 的方法。
 
 ## 與 WinForms 版的差異
 
@@ -20,7 +20,7 @@ ZeroReferencesCli 是一個**純命令列 (Console)** 工具，使用 Roslyn 引
 | UI | Console 輸出 | Windows Forms |
 | Roslyn 版本 | 5.3.0 | 4.14.0 |
 | 額外套件 | Humanizer.Core, DI, Logging, Composition | 無 |
-| 方法名稱格式 | `ContainingType.Name.MethodName` | `ContainingType.ToDisplayString().MethodName` (完整限定) |
+| 方法名稱格式 | `SymbolDisplayFormat`（含存取修飾詞、完整限定名稱） | `SymbolDisplayFormat`（含存取修飾詞、完整限定名稱） |
 
 ## 建置與執行
 
