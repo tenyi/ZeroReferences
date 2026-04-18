@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="Core\ZeroReferences.Core.csproj" />
+  <Project Path="GUI\ZeroReferences.GUI.csproj"/>
+  <Project Path="AvaloniaGUI\AvaloniaGUI.csproj"/>
+  <Project Path="CLI\ZeroReferences.CLI.csproj" />
+  <Project Path="TUI\ZeroReferences.TUI.csproj" />
+  <Project Path="Tests\Tests.csproj"/>
+</Solution>
