@@ -24,16 +24,31 @@ public class ReferenceCheckerTests
     public async Task Check_InvalidExtension_ThrowsArgumentException()
     {
         var ex = await Assert.ThrowsAsync<ArgumentException>(
-            () => ReferenceChecker.Check("/tmp/test.csproj"));
-        Assert.Contains(".sln", ex.Message);
+            () => ReferenceChecker.Check("/tmp/test.txt"));
+        Assert.Contains(".csproj", ex.Message);
     }
 
-    [Fact]
-    public async Task Check_NonExistentFile_ThrowsArgumentException()
+    [Theory]
+    [InlineData("/tmp/nonexistent.sln")]
+    [InlineData("/tmp/nonexistent.slnx")]
+    [InlineData("/tmp/nonexistent.csproj")]
+    public async Task Check_NonExistentFile_ThrowsArgumentException(string path)
     {
         var ex = await Assert.ThrowsAsync<ArgumentException>(
-            () => ReferenceChecker.Check("/tmp/nonexistent.sln"));
+            () => ReferenceChecker.Check(path));
         Assert.Contains("exist", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("/tmp/test.sln")]
+    [InlineData("/tmp/test.slnx")]
+    [InlineData("/tmp/test.csproj")]
+    public async Task Check_ValidExtensionButNonExistent_DoesNotRejectExtension(string path)
+    {
+        var ex = await Assert.ThrowsAsync<ArgumentException>(
+            () => ReferenceChecker.Check(path));
+        // 應該是「檔案不存在」的錯誤，不是「副檔名無效」的錯誤
+        Assert.DoesNotContain("extension", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     // ===== RemoveMethodsAsync() 參數驗證 =====

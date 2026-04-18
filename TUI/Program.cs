@@ -210,7 +210,7 @@ public class Program
         Console.Write($"{BOLD}{CYAN}║         ZeroReferences TUI - 輸入 Solution 路徑                         ║{RESET}\n");
         Console.Write($"{BOLD}{CYAN}╚═══════════════════════════════════════════════════════════════════════════╝{RESET}\n\n");
 
-        Console.Write($"  {BOLD}輸入 Solution 路徑 (.sln 或 .slnx):{RESET}\n\n");
+        Console.Write($"  {BOLD}輸入 Solution / Project 路徑 (.sln / .slnx / .csproj):{RESET}\n\n");
         Console.Write($"  {YELLOW}> {RESET}{currentInput}");
         Console.Write(new string(' ', Math.Max(0, 80 - currentInput.Length)));
         Console.Write("\n\n");
@@ -377,9 +377,9 @@ public class Program
         }
 
         string ext = System.IO.Path.GetExtension(_solutionPath).ToLower();
-        if (ext != ".sln" && ext != ".slnx")
+        if (ext != ".sln" && ext != ".slnx" && ext != ".csproj")
         {
-            ShowMessage($"{RED}錯誤: 檔案必須是 .sln 或 .slnx 格式{RESET}");
+            ShowMessage($"{RED}錯誤: 檔案必須是 .sln、.slnx 或 .csproj 格式{RESET}");
             return;
         }
 

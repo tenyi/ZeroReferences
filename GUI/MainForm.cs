@@ -192,8 +192,8 @@
             using (OpenFileDialog openFileDialog = new OpenFileDialog())
             {
                 // 設定檔案類型篩選器：只顯示 .sln /.slnx檔案
-                openFileDialog.Filter = "Solution Files (*.sln;*.slnx)|*.sln;*.slnx";
-                openFileDialog.Title = "Select a Solution File";
+                openFileDialog.Filter = "Solution/Project Files (*.sln;*.slnx;*.csproj)|*.sln;*.slnx;*.csproj";
+                openFileDialog.Title = "Select a Solution or Project File";
 
                 // 顯示對話框並取得使用者選擇的結果
                 var result = openFileDialog.ShowDialog();
@@ -203,7 +203,7 @@
                 {
                     string ext = Path.GetExtension(openFileDialog.FileName).ToLower();
                     // 確認副檔名為 .sln / .slnx （不區分大小寫）
-                    if (ext == ".sln" || ext == ".slnx")
+                    if (ext == ".sln" || ext == ".slnx" || ext == ".csproj")
                     {
                         // 儲存選取的檔案路徑
                         solutionPath = openFileDialog.FileName;

@@ -63,9 +63,9 @@ public partial class MainWindow : Window
             AllowMultiple = false,
             FileTypeFilter = new[]
             {
-                new FilePickerFileType("Solution Files")
+                new FilePickerFileType("Solution/Project Files")
                 {
-                    Patterns = new[] { "*.sln", "*.slnx" }
+                    Patterns = new[] { "*.sln", "*.slnx", "*.csproj" }
                 }
             }
         };
@@ -80,7 +80,7 @@ public partial class MainWindow : Window
             if (filePath != null)
             {
                 string ext = System.IO.Path.GetExtension(filePath).ToLower();
-                if (ext == ".sln" || ext == ".slnx")
+                if (ext == ".sln" || ext == ".slnx" || ext == ".csproj")
                 {
                     // 清空之前的結果
                     ResultListBox.ItemsSource = null;

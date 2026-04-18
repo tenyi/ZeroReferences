@@ -69,25 +69,37 @@ namespace ZeroReferences
             {
                 throw new ArgumentException("Solution path cannot be null or empty.");
             }
-            // 檢查副檔名是否為 .sln
+            // 檢查副檔名是否為 .sln / .slnx / .csproj
             string ext = Path.GetExtension(solutionPath).ToLower();
-            if (ext != ".sln" && ext != ".slnx")
+            if (ext != ".sln" && ext != ".slnx" && ext != ".csproj")
             {
-                throw new ArgumentException("Solution path must have a .sln / .slnx extension.");
+                throw new ArgumentException("Path must have a .sln / .slnx / .csproj extension.");
             }
             // 檢查檔案是否存在
             if (!File.Exists(solutionPath))
             {
-                throw new ArgumentException("Solution file does not exist.");
+                throw new ArgumentException("Solution/project file does not exist.");
             }
 
-            // ===== 建立工作區並開啟解決方案 =====
-            // 使用 using 確保工作區資源正確釋放，避免檔案鎖定與記憶體洩漏
+            // ===== 建立工作區並開啟解決方案或專案 =====
             using var workspace = MSBuildWorkspace.Create();
-            var solution = await workspace.OpenSolutionAsync(solutionPath);
+            Solution solution;
+            IEnumerable<Project> projects;
 
-            // ===== 遍歷解決方案中的每個專案 =====
-            foreach (var project in solution.Projects)
+            if (ext == ".csproj")
+            {
+                var project = await workspace.OpenProjectAsync(solutionPath);
+                solution = project.Solution;
+                projects = new[] { project };
+            }
+            else
+            {
+                solution = await workspace.OpenSolutionAsync(solutionPath);
+                projects = solution.Projects;
+            }
+
+            // ===== 遍歷專案 =====
+            foreach (var project in projects)
             {
                 // 取得專案的編譯物件（Compilation），用於語意分析
                 var compilation = await project.GetCompilationAsync();
@@ -135,6 +147,11 @@ namespace ZeroReferences
                         {
                             continue;
                         }
+                        // 跳過 Main 方法（程式入口點，不應視為孤兒方法）
+                        if (symbol.Name == "Main")
+                        {
+                            continue;
+                        }
 
                         // 使用 SymbolFinder 在整個解決方案中查詢此方法的所有引用位置
                         var references = await SymbolFinder.FindReferencesAsync(symbol, solution);
@@ -157,15 +174,15 @@ namespace ZeroReferences
         /// 批次刪除多個方法。只開啟一次工作區，在單一交易中完成所有刪除。
         /// 若方法有實作介面（explicit 或 implicit），也會一併刪除介面中的方法宣告。
         /// </summary>
-        /// <param name="solutionPath">.sln/.slnx 檔案的完整路徑。</param>
-        /// <param name="methodSignatures">要刪除的方法完整簽名字串清單。</param>
+        /// <param name="solutionPath">.sln/.slnx/.csproj 檔案的完整路徑。</param>
+        /// <param name="methodSignatures">要刪除的方法完整簽字串清單。</param>
         /// <returns>回傳 tuple，包含是否成功及訊息。</returns>
         public static async Task<(bool success, string message)> RemoveMethodsAsync(
             string solutionPath, List<string> methodSignatures)
         {
-            // ===== 建立工作區並開啟解決方案 =====
+            // ===== 建立工作區並開啟解決方案或專案 =====
             using var workspace = MSBuildWorkspace.Create();
-            var solution = await workspace.OpenSolutionAsync(solutionPath);
+            var solution = await OpenSolutionOrProjectAsync(workspace, solutionPath);
 
             // 用於記錄需要從各文件中刪除的方法語法節點
             var nodesToRemove = new Dictionary<Microsoft.CodeAnalysis.DocumentId, List<MethodDeclarationSyntax>>();
@@ -292,15 +309,15 @@ namespace ZeroReferences
         /// 刪除指定的單一方法。重新開啟解決方案，找到符合簽名的方法並刪除。
         /// 若該方法有實作介面（explicit 或 implicit），也會一併刪除介面中的方法宣告。
         /// </summary>
-        /// <param name="solutionPath">.sln/.slnx 檔案的完整路徑。</param>
+        /// <param name="solutionPath">.sln/.slnx/.csproj 檔案的完整路徑。</param>
         /// <param name="methodSignature">方法的完整簽名字串（由 ToDisplayString() 產生）。</param>
         /// <returns>回傳 tuple，包含是否成功及訊息。</returns>
         public static async Task<(bool success, string message)> RemoveMethodAsync(
             string solutionPath, string methodSignature)
         {
-            // ===== 建立工作區並開啟解決方案 =====
+            // ===== 建立工作區並開啟解決方案或專案 =====
             using var workspace = MSBuildWorkspace.Create();
-            var solution = await workspace.OpenSolutionAsync(solutionPath);
+            var solution = await OpenSolutionOrProjectAsync(workspace, solutionPath);
 
             // 用於記錄需要從各文件中刪除的方法語法節點
             // Key = DocumentId, Value = 要刪除的方法語法節點清單
@@ -670,6 +687,22 @@ namespace ZeroReferences
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// 根據副檔名決定開啟解決方案或專案，回傳 Solution 物件。
+        /// .csproj 使用 OpenProjectAsync，.sln/.slnx 使用 OpenSolutionAsync。
+        /// </summary>
+        private static async Task<Solution> OpenSolutionOrProjectAsync(
+            MSBuildWorkspace workspace, string path)
+        {
+            string ext = Path.GetExtension(path).ToLower();
+            if (ext == ".csproj")
+            {
+                var project = await workspace.OpenProjectAsync(path);
+                return project.Solution;
+            }
+            return await workspace.OpenSolutionAsync(path);
         }
     }
 }

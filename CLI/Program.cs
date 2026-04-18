@@ -2,7 +2,7 @@ namespace ZeroReferences;
 
 /// <summary>
 /// ZeroReferences 命令列工具的進入點類別。
-/// 使用 Roslyn 分析指定的 .sln 檔案，找出未被引用的 public / private / protected 方法。
+/// 使用 Roslyn 分析指定的 .sln/.slnx/.csproj 檔案，找出未被引用的 public / private / protected 方法。
 /// </summary>
 public class Program
 {
@@ -16,8 +16,9 @@ public class Program
         // 檢查命令列參數
         if (args.Length == 0)
         {
-            Console.WriteLine("用法: ZeroReferences <solution_path>");
+            Console.WriteLine("用法: ZeroReferences <solution_or_project_path>");
             Console.WriteLine("例如: ZeroReferences C:\\Path\\To\\Solution.sln");
+            Console.WriteLine("      ZeroReferences C:\\Path\\To\\Project.csproj");
             return;
         }
 
