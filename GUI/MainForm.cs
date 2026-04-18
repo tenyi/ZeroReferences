@@ -6,6 +6,21 @@
     /// </summary>
     public partial class MainForm : Form
     {
+        /// <summary>
+        /// 存取層級篩選器：顯示全部方法。
+        /// </summary>
+        private const string AccessibilityFilterAll = "全部";
+
+        /// <summary>
+        /// 存取層級篩選器：只顯示 public 方法。
+        /// </summary>
+        private const string AccessibilityFilterPublicOnly = "只看 public";
+
+        /// <summary>
+        /// 存取層級篩選器：只顯示 private 方法。
+        /// </summary>
+        private const string AccessibilityFilterPrivateOnly = "只看 private";
+
         // ===== 私有成員欄位 =====
 
         /// <summary>
@@ -19,13 +34,103 @@
         private ModalDialog dialog = new ModalDialog("檢查中，請稍候...");
 
         /// <summary>
+        /// 保存最新一次檢查得到的完整方法清單，供 UI 篩選使用。
+        /// </summary>
+        private readonly List<string> allMethodResults = new List<string>();
+
+        /// <summary>
+        /// 存取層級篩選下拉選單。
+        /// </summary>
+        private ComboBox accessibilityFilterComboBox = null!;
+
+        /// <summary>
+        /// 存取層級篩選文字標籤。
+        /// </summary>
+        private Label accessibilityFilterLabel = null!;
+
+        /// <summary>
         /// 構造函數。初始化 UI 組件，並設置預設的模態對話框。
         /// </summary>
         public MainForm()
         {
             InitializeComponent();
+            InitializeAccessibilityFilterUi();
             // 訂閱 ListBox 的選取變更事件，控制移除按鈕的啟用狀態
             resultListBox.SelectedIndexChanged += resultListBox_SelectedIndexChanged;
+        }
+
+        /// <summary>
+        /// 初始化存取層級篩選下拉選單 UI。
+        /// 使用程式碼動態建立，避免直接修改 Designer 產生檔。
+        /// </summary>
+        private void InitializeAccessibilityFilterUi()
+        {
+            accessibilityFilterLabel = new Label
+            {
+                AutoSize = true,
+                Font = new Font("Microsoft JhengHei UI", 10.5F, FontStyle.Regular, GraphicsUnit.Point, 136),
+                Location = new Point(56, 145),
+                Name = "accessibilityFilterLabel",
+                Text = "篩選存取層級："
+            };
+
+            accessibilityFilterComboBox = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Font = new Font("Microsoft JhengHei UI", 10.5F, FontStyle.Regular, GraphicsUnit.Point, 136),
+                Location = new Point(172, 141),
+                Name = "accessibilityFilterComboBox",
+                Size = new Size(180, 28)
+            };
+
+            accessibilityFilterComboBox.Items.Add(AccessibilityFilterAll);
+            accessibilityFilterComboBox.Items.Add(AccessibilityFilterPublicOnly);
+            accessibilityFilterComboBox.Items.Add(AccessibilityFilterPrivateOnly);
+            accessibilityFilterComboBox.SelectedIndex = 0;
+            accessibilityFilterComboBox.SelectedIndexChanged += accessibilityFilterComboBox_SelectedIndexChanged;
+
+            Controls.Add(accessibilityFilterLabel);
+            Controls.Add(accessibilityFilterComboBox);
+        }
+
+        /// <summary>
+        /// 處理篩選下拉選單切換事件，重新套用目前的結果篩選。
+        /// </summary>
+        private void accessibilityFilterComboBox_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            ApplyAccessibilityFilter();
+        }
+
+        /// <summary>
+        /// 根據下拉選單選項，將完整結果清單過濾後顯示到 ListBox。
+        /// </summary>
+        private void ApplyAccessibilityFilter()
+        {
+            resultListBox.Items.Clear();
+
+            string selectedFilter = accessibilityFilterComboBox.SelectedItem?.ToString() ?? AccessibilityFilterAll;
+
+            foreach (var methodSignature in allMethodResults)
+            {
+                if (selectedFilter == AccessibilityFilterPublicOnly)
+                {
+                    if (!methodSignature.StartsWith("public ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+                }
+                else if (selectedFilter == AccessibilityFilterPrivateOnly)
+                {
+                    if (!methodSignature.StartsWith("private", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+                }
+
+                resultListBox.Items.Add(methodSignature);
+            }
+
+            removeMethodButton.Enabled = resultListBox.SelectedItems.Count > 0;
         }
 
         // ===== 事件處理常式 =====
@@ -39,6 +144,7 @@
         private async void checkProjectButton_Click(object sender, EventArgs e)
         {
             resultListBox.Items.Clear();
+            allMethodResults.Clear();
             // 防止重複點擊
             checkProjectButton.Enabled = false;
 
@@ -65,10 +171,8 @@
             {
                 MessageBox.Show($"檢查完成，計有 {result.Count} 個未參照方法。");
 
-                foreach (var item in result)
-                {
-                    resultListBox.Items.Add(item);
-                }
+                allMethodResults.AddRange(result);
+                ApplyAccessibilityFilter();
             }
 
             checkProjectButton.Enabled = true;
@@ -84,6 +188,7 @@
         {
             // 清空之前的結果
             resultListBox.Items.Clear();
+            allMethodResults.Clear();
 
             // 建立並顯示開啟檔案對話框
             using (OpenFileDialog openFileDialog = new OpenFileDialog())
@@ -194,13 +299,12 @@
 
                 // 重新執行檢查以更新清單
                 resultListBox.Items.Clear();
+                allMethodResults.Clear();
                 var checkResult = await ReferenceChecker.Check(solutionPath);
                 if (checkResult != null)
                 {
-                    foreach (var item in checkResult)
-                    {
-                        resultListBox.Items.Add(item);
-                    }
+                    allMethodResults.AddRange(checkResult);
+                    ApplyAccessibilityFilter();
                     MessageBox.Show($"重新檢查完成，計有 {checkResult.Count} 個未參照方法。");
                 }
             }

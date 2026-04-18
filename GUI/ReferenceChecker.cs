@@ -11,12 +11,49 @@ namespace ZeroReferences
     /// <summary>
     /// 提供檢查 .NET 解決方案中未參照方法之功能的靜態類別。
     /// 使用 Microsoft.CodeAnalysis (Roslyn) 組合式 API 分析解決方案，
-    /// 找出所有定義為 public 但在整個解決方案中沒有被引用的方法（孤兒方法）。
+    /// 找出指定存取層級（public / private / protected）且在整個解決方案中沒有被引用的方法（孤兒方法）。
     /// </summary>
     public static class ReferenceChecker
     {
         /// <summary>
-        /// 分析指定的解決方案檔案，找出所有未被引用的 public 方法。
+        /// 方法簽名顯示格式：包含存取修飾詞、回傳型別、完整型別名稱與參數型別。
+        /// 例如：public void MyNamespace.MyClass.MyMethod(int)
+        /// </summary>
+        private static readonly SymbolDisplayFormat MethodSignatureDisplayFormat = new SymbolDisplayFormat(
+            typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
+            genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters,
+            memberOptions: SymbolDisplayMemberOptions.IncludeAccessibility |
+                           SymbolDisplayMemberOptions.IncludeType |
+                           SymbolDisplayMemberOptions.IncludeContainingType |
+                           SymbolDisplayMemberOptions.IncludeParameters,
+            parameterOptions: SymbolDisplayParameterOptions.IncludeType |
+                              SymbolDisplayParameterOptions.IncludeParamsRefOut,
+            miscellaneousOptions: SymbolDisplayMiscellaneousOptions.UseSpecialTypes |
+                                  SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
+
+        /// <summary>
+        /// 判斷方法的存取層級是否為本工具要掃描的範圍（public / private / protected）。
+        /// 另外一併納入 protected internal 與 private protected。
+        /// </summary>
+        private static bool ShouldAnalyzeAccessibility(Microsoft.CodeAnalysis.Accessibility accessibility)
+        {
+            return accessibility == Microsoft.CodeAnalysis.Accessibility.Public ||
+                   accessibility == Microsoft.CodeAnalysis.Accessibility.Private ||
+                   accessibility == Microsoft.CodeAnalysis.Accessibility.Protected ||
+                   accessibility == Microsoft.CodeAnalysis.Accessibility.ProtectedOrInternal ||
+                   accessibility == Microsoft.CodeAnalysis.Accessibility.ProtectedAndInternal;
+        }
+
+        /// <summary>
+        /// 產生方法顯示簽名，供 UI 顯示與刪除比對共用，避免格式不一致。
+        /// </summary>
+        private static string GetMethodSignature(IMethodSymbol symbol)
+        {
+            return symbol.ToDisplayString(MethodSignatureDisplayFormat);
+        }
+
+        /// <summary>
+        /// 分析指定的解決方案檔案，找出所有未被引用的 public / private / protected 方法。
         /// </summary>
         /// <param name="solutionPath">.sln/.slnx 檔案的完整路徑。</param>
         /// <returns>回傳包含所有未參照方法全限定名稱的清單。</returns>
@@ -82,12 +119,11 @@ namespace ZeroReferences
                     var symbol = model.GetDeclaredSymbol(method) as IMethodSymbol;
                     if (symbol == null) { throw new ArgumentException("並沒有任何 symbol"); }
 
-                    // 只檢查 public 方法（排除 private、protected、internal 等）
-                    if (symbol.DeclaredAccessibility == Microsoft.CodeAnalysis.Accessibility.Public)
+                    // 只檢查目標存取層級的方法（public / private / protected）
+                    if (ShouldAnalyzeAccessibility(symbol.DeclaredAccessibility))
                     {
-                        // 使用 ToDisplayString 擴充方法取得方法的完整簽名
-                        // 預設格式包含：類別名稱、方法名稱、參數型別、返回類型
-                        string name = symbol.ToDisplayString();
+                        // 使用統一格式取得完整簽名（含存取修飾詞）
+                        string name = GetMethodSignature(symbol);
 
                         // 跳過 Controller 類別中的方法（通常是 MVC/Web API 的控制器方法）
                         if (name.Contains("Controller"))
@@ -158,7 +194,7 @@ namespace ZeroReferences
                         var symbol = model.GetDeclaredSymbol(method) as IMethodSymbol;
                         if (symbol == null) continue;
 
-                        string signature = symbol.ToDisplayString();
+                        string signature = GetMethodSignature(symbol);
 
                         // 比對是否為任一目標簽名
                         if (methodSignatures.Contains(signature))
@@ -291,7 +327,7 @@ namespace ZeroReferences
                         if (symbol == null) continue;
 
                         // 比對簽名字串是否與目標一致
-                        if (symbol.ToDisplayString() == methodSignature)
+                        if (GetMethodSignature(symbol) == methodSignature)
                         {
                             // 記錄此方法節點待刪除
                             if (!nodesToRemove.ContainsKey(document.Id))
