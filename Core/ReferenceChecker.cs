@@ -9,6 +9,19 @@ using Microsoft.CodeAnalysis.MSBuild;
 namespace ZeroReferences
 {
     /// <summary>
+    /// 表示方法刪除作業的結果狀態。
+    /// </summary>
+    public enum RemoveResult
+    {
+        /// <summary>所有指定的方法均已成功刪除。</summary>
+        Success,
+        /// <summary>部分方法刪除成功，部分簽名未找到匹配方法。</summary>
+        Partial,
+        /// <summary>刪除失敗，未刪除任何方法。</summary>
+        Failed
+    }
+
+    /// <summary>
     /// 提供檢查 .NET 解決方案中未參照方法之功能的靜態類別。
     /// 使用 Microsoft.CodeAnalysis (Roslyn) 組合式 API 分析解決方案，
     /// 找出指定存取層級（public / private / protected）且在整個解決方案中沒有被引用的方法（孤兒方法）。
@@ -172,11 +185,13 @@ namespace ZeroReferences
         /// <summary>
         /// 批次刪除多個方法。只開啟一次工作區，在單一交易中完成所有刪除。
         /// 若方法有實作介面（explicit 或 implicit），也會一併刪除介面中的方法宣告。
+        /// 呼叫端應檢查 <see cref="RemoveResult"/> 以判斷是否為完全成功、部分成功或失敗，
+        /// 並一併顯示 <paramref name="message"/> 以提供完整資訊。
         /// </summary>
         /// <param name="solutionPath">.sln/.slnx/.csproj 檔案的完整路徑。</param>
         /// <param name="methodSignatures">要刪除的方法完整簽字串清單。</param>
-        /// <returns>回傳 tuple，包含是否成功及訊息。</returns>
-        public static async Task<(bool success, string message)> RemoveMethodsAsync(
+        /// <returns>回傳 tuple，包含刪除結果狀態及描述訊息。</returns>
+        public static async Task<(RemoveResult result, string message)> RemoveMethodsAsync(
             string solutionPath, List<string> methodSignatures)
         {
             // ===== 建立工作區並開啟解決方案或專案 =====
@@ -184,7 +199,7 @@ namespace ZeroReferences
             var solution = await OpenSolutionOrProjectAsync(workspace, solutionPath);
 
             // 用於記錄需要從各文件中刪除的方法語法節點
-            var nodesToRemove = new Dictionary<Microsoft.CodeAnalysis.DocumentId, List<MethodDeclarationSyntax>>();
+            var nodesToRemove = new Dictionary<Microsoft.CodeAnalysis.DocumentId, HashSet<MethodDeclarationSyntax>>();
 
             // 記錄每個簽名是否找到對應方法
             var foundSignatures = new HashSet<string>();
@@ -217,11 +232,12 @@ namespace ZeroReferences
                         {
                             foundSignatures.Add(signature);
 
-                            if (!nodesToRemove.ContainsKey(document.Id))
+                            if (!nodesToRemove.TryGetValue(document.Id, out var set))
                             {
-                                nodesToRemove[document.Id] = new List<MethodDeclarationSyntax>();
+                                set = new HashSet<MethodDeclarationSyntax>();
+                                nodesToRemove[document.Id] = set;
                             }
-                            nodesToRemove[document.Id].Add(method);
+                            set.Add(method);
 
                             // 處理 Explicit Interface Implementation
                             foreach (var ifaceMethod in symbol.ExplicitInterfaceImplementations)
@@ -250,7 +266,7 @@ namespace ZeroReferences
             var notFound = methodSignatures.Where(s => !foundSignatures.Contains(s)).ToList();
             if (nodesToRemove.Count == 0)
             {
-                return (false, $"找不到任何指定的方法。");
+                return (RemoveResult.Failed, $"找不到任何指定的方法。");
             }
 
             // ===== 執行刪除操作 =====
@@ -291,16 +307,16 @@ namespace ZeroReferences
             bool applied = workspace.TryApplyChanges(updatedSolution);
             if (applied)
             {
-                string msg = $"已成功刪除 {foundSignatures.Count} 個方法。";
                 if (notFound.Count > 0)
                 {
-                    msg += $"\n（其中 {notFound.Count} 個簽名未找到匹配方法）";
+                    return (RemoveResult.Partial,
+                        $"已成功刪除 {foundSignatures.Count} 個方法（共 {methodSignatures.Count} 個，{notFound.Count} 個簽名未找到匹配方法）。");
                 }
-                return (true, msg);
+                return (RemoveResult.Success, $"已成功刪除 {foundSignatures.Count} 個方法。");
             }
             else
             {
-                return (false, "套用變更失敗。");
+                return (RemoveResult.Failed, "套用變更失敗。");
             }
         }
 
@@ -310,8 +326,8 @@ namespace ZeroReferences
         /// </summary>
         /// <param name="solutionPath">.sln/.slnx/.csproj 檔案的完整路徑。</param>
         /// <param name="methodSignature">方法的完整簽名字串（由 ToDisplayString() 產生）。</param>
-        /// <returns>回傳 tuple，包含是否成功及訊息。</returns>
-        public static async Task<(bool success, string message)> RemoveMethodAsync(
+        /// <returns>回傳 tuple，包含刪除結果狀態及描述訊息。</returns>
+        public static async Task<(RemoveResult result, string message)> RemoveMethodAsync(
             string solutionPath, string methodSignature)
         {
             // ===== 建立工作區並開啟解決方案或專案 =====
@@ -320,7 +336,7 @@ namespace ZeroReferences
 
             // 用於記錄需要從各文件中刪除的方法語法節點
             // Key = DocumentId, Value = 要刪除的方法語法節點清單
-            var nodesToRemove = new Dictionary<Microsoft.CodeAnalysis.DocumentId, List<MethodDeclarationSyntax>>();
+            var nodesToRemove = new Dictionary<Microsoft.CodeAnalysis.DocumentId, HashSet<MethodDeclarationSyntax>>();
 
             // ===== 遍歷解決方案尋找目標方法 =====
             foreach (var project in solution.Projects)
@@ -346,11 +362,12 @@ namespace ZeroReferences
                         if (GetMethodSignature(symbol) == methodSignature)
                         {
                             // 記錄此方法節點待刪除
-                            if (!nodesToRemove.ContainsKey(document.Id))
+                            if (!nodesToRemove.TryGetValue(document.Id, out var set))
                             {
-                                nodesToRemove[document.Id] = new List<MethodDeclarationSyntax>();
+                                set = new HashSet<MethodDeclarationSyntax>();
+                                nodesToRemove[document.Id] = set;
                             }
-                            nodesToRemove[document.Id].Add(method);
+                            set.Add(method);
 
                             // ===== 處理 Explicit Interface Implementation =====
                             // 例如：void IMyInterface.MyMethod()
@@ -380,7 +397,7 @@ namespace ZeroReferences
             // ===== 若找不到任何方法，回傳失敗 =====
             if (nodesToRemove.Count == 0)
             {
-                return (false, $"找不到方法：{methodSignature}");
+                return (RemoveResult.Failed, $"找不到方法：{methodSignature}");
             }
 
             // ===== 執行刪除操作 =====
@@ -416,11 +433,11 @@ namespace ZeroReferences
             bool applied = workspace.TryApplyChanges(updatedSolution);
             if (applied)
             {
-                return (true, $"已成功刪除方法：{methodSignature}");
+                return (RemoveResult.Success, $"已成功刪除方法：{methodSignature}");
             }
             else
             {
-                return (false, "套用變更失敗。");
+                return (RemoveResult.Failed, "套用變更失敗。");
             }
         }
 
@@ -434,7 +451,7 @@ namespace ZeroReferences
         private static async Task FindAndMarkInterfaceMethodForRemoval(
             Solution solution,
             IMethodSymbol ifaceMethod,
-            Dictionary<Microsoft.CodeAnalysis.DocumentId, List<MethodDeclarationSyntax>> nodesToRemove)
+            Dictionary<Microsoft.CodeAnalysis.DocumentId, HashSet<MethodDeclarationSyntax>> nodesToRemove)
         {
             // 取得介面方法所在的語法節點
             foreach (var project in solution.Projects)
@@ -459,15 +476,12 @@ namespace ZeroReferences
                         // 比對是否為同一個介面方法
                         if (SymbolEqualityComparer.Default.Equals(symbol, ifaceMethod))
                         {
-                            if (!nodesToRemove.ContainsKey(document.Id))
+                            if (!nodesToRemove.TryGetValue(document.Id, out var set))
                             {
-                                nodesToRemove[document.Id] = new List<MethodDeclarationSyntax>();
+                                set = new HashSet<MethodDeclarationSyntax>();
+                                nodesToRemove[document.Id] = set;
                             }
-                            // 避免重複加入
-                            if (!nodesToRemove[document.Id].Contains(method))
-                            {
-                                nodesToRemove[document.Id].Add(method);
-                            }
+                            set.Add(method);
                             return; // 找到後即可返回
                         }
                     }
@@ -488,7 +502,7 @@ namespace ZeroReferences
             Solution solution,
             Compilation compilation,
             IMethodSymbol methodSymbol,
-            Dictionary<Microsoft.CodeAnalysis.DocumentId, List<MethodDeclarationSyntax>> nodesToRemove)
+            Dictionary<Microsoft.CodeAnalysis.DocumentId, HashSet<MethodDeclarationSyntax>> nodesToRemove)
         {
             // 取得包含此方法的類別所實作的所有介面
             var containingType = methodSymbol.ContainingType;
@@ -548,7 +562,7 @@ namespace ZeroReferences
             Solution solution,
             Compilation compilation,
             IMethodSymbol ifaceMethod,
-            Dictionary<Microsoft.CodeAnalysis.DocumentId, List<MethodDeclarationSyntax>> nodesToRemove)
+            Dictionary<Microsoft.CodeAnalysis.DocumentId, HashSet<MethodDeclarationSyntax>> nodesToRemove)
         {
             // 遍歷解決方案中的所有專案和文件
             foreach (var project in solution.Projects)
@@ -627,16 +641,14 @@ namespace ZeroReferences
         private static void AddNodeToRemove(
             Microsoft.CodeAnalysis.DocumentId documentId,
             MethodDeclarationSyntax method,
-            Dictionary<Microsoft.CodeAnalysis.DocumentId, List<MethodDeclarationSyntax>> nodesToRemove)
+            Dictionary<Microsoft.CodeAnalysis.DocumentId, HashSet<MethodDeclarationSyntax>> nodesToRemove)
         {
-            if (!nodesToRemove.ContainsKey(documentId))
+            if (!nodesToRemove.TryGetValue(documentId, out var set))
             {
-                nodesToRemove[documentId] = new List<MethodDeclarationSyntax>();
+                set = new HashSet<MethodDeclarationSyntax>();
+                nodesToRemove[documentId] = set;
             }
-            if (!nodesToRemove[documentId].Contains(method))
-            {
-                nodesToRemove[documentId].Add(method);
-            }
+            set.Add(method);
         }
 
         /// <summary>
@@ -649,7 +661,7 @@ namespace ZeroReferences
         private static async Task FindAndMarkOverridingMethodsForRemoval(
             Solution solution,
             IMethodSymbol methodToOverride,
-            Dictionary<Microsoft.CodeAnalysis.DocumentId, List<MethodDeclarationSyntax>> nodesToRemove)
+            Dictionary<Microsoft.CodeAnalysis.DocumentId, HashSet<MethodDeclarationSyntax>> nodesToRemove)
         {
             // 遍歷解決方案中的所有專案和文件
             foreach (var project in solution.Projects)

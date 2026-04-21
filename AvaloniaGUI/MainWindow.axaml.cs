@@ -176,14 +176,30 @@ public partial class MainWindow : Window
         try
         {
             // 執行批次刪除
-            var (success, message) = await ReferenceChecker.RemoveMethodsAsync(
+            var (result, message) = await ReferenceChecker.RemoveMethodsAsync(
                 _solutionPath, selectedItems);
 
-            if (success)
+            if (result == RemoveResult.Success)
             {
                 await ShowInfoMessage("刪除成功", message);
 
                 // 重新執行檢查以更新清單
+                ResultListBox.ItemsSource = null;
+                _allMethodResults.Clear();
+
+                var checkResult = await ReferenceChecker.Check(_solutionPath);
+                if (checkResult != null)
+                {
+                    _allMethodResults.AddRange(checkResult);
+                    ApplyAccessibilityFilter();
+                    await ShowInfoMessage("重新檢查完成", $"計有 {checkResult.Count} 個未參照方法。");
+                }
+            }
+            else if (result == RemoveResult.Partial)
+            {
+                await ShowInfoMessage("部分刪除成功", message);
+
+                // 部分成功仍需重新檢查以更新清單
                 ResultListBox.ItemsSource = null;
                 _allMethodResults.Clear();
 

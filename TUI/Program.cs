@@ -453,11 +453,26 @@ public class Program
 
         try
         {
-            var (success, message) = await ReferenceChecker.RemoveMethodsAsync(_solutionPath, signatures);
+            var (result, message) = await ReferenceChecker.RemoveMethodsAsync(_solutionPath, signatures);
 
-            if (success)
+            if (result == RemoveResult.Success)
             {
                 Console.WriteLine($"\n  {GREEN}✔ {message}{RESET}");
+                Console.Write($"  {CYAN}重新檢查中...{RESET}");
+
+                _allResults.Clear();
+                _selectedIndices.Clear();
+                _cursorIndex = 0;
+
+                var results = await ReferenceChecker.Check(_solutionPath);
+                _allResults.AddRange(results);
+                ApplyFilter();
+
+                Console.WriteLine($"\n  {GREEN}✔ 重新檢查完成，找到 {_allResults.Count} 個未參照方法。{RESET}");
+            }
+            else if (result == RemoveResult.Partial)
+            {
+                Console.WriteLine($"\n  {YELLOW}⚠ {message}{RESET}");
                 Console.Write($"  {CYAN}重新檢查中...{RESET}");
 
                 _allResults.Clear();

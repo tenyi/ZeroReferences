@@ -216,7 +216,7 @@
                 else
                 {
                     // 若選擇無效，顯示警告訊息
-                    MessageBox.Show("Please select a valid .sln/.slnx file.", "Invalid File", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show("請選擇有效的 .sln/.slnx/.csproj 檔案。", "無效的檔案", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     // 停用「檢查專案」按鈕
                     checkProjectButton.Enabled = false;
                 }
@@ -276,14 +276,29 @@
             try
             {
                 // 執行批次刪除
-                var (success, message) = await ReferenceChecker.RemoveMethodsAsync(solutionPath, signatures);
+                var (result, message) = await ReferenceChecker.RemoveMethodsAsync(solutionPath, signatures);
 
                 // 顯示結果
-                if (success)
+                if (result == RemoveResult.Success)
                 {
                     MessageBox.Show(message, "刪除成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
                     // 重新執行檢查以更新清單
+                    resultListBox.Items.Clear();
+                    allMethodResults.Clear();
+                    var checkResult = await ReferenceChecker.Check(solutionPath);
+                    if (checkResult != null)
+                    {
+                        allMethodResults.AddRange(checkResult);
+                        ApplyAccessibilityFilter();
+                        MessageBox.Show($"重新檢查完成，計有 {checkResult.Count} 個未參照方法。");
+                    }
+                }
+                else if (result == RemoveResult.Partial)
+                {
+                    MessageBox.Show(message, "部分刪除成功", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+
+                    // 部分成功仍需重新檢查以更新清單
                     resultListBox.Items.Clear();
                     allMethodResults.Clear();
                     var checkResult = await ReferenceChecker.Check(solutionPath);
