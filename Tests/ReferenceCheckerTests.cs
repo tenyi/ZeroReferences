@@ -1,4 +1,4 @@
-using ZeroReferences;
+using System.IO;
 
 namespace ZeroReferences.Tests;
 
@@ -23,31 +23,33 @@ public class ReferenceCheckerTests
     [Fact]
     public async Task Check_InvalidExtension_ThrowsArgumentException()
     {
+        var path = Path.Combine(Path.GetTempPath(), "test.txt");
         var ex = await Assert.ThrowsAsync<ArgumentException>(
-            () => ReferenceChecker.Check("/tmp/test.txt"));
+            () => ReferenceChecker.Check(path));
         Assert.Contains(".csproj", ex.Message);
     }
 
     [Theory]
-    [InlineData("/tmp/nonexistent.sln")]
-    [InlineData("/tmp/nonexistent.slnx")]
-    [InlineData("/tmp/nonexistent.csproj")]
-    public async Task Check_NonExistentFile_ThrowsArgumentException(string path)
+    [InlineData(".sln")]
+    [InlineData(".slnx")]
+    [InlineData(".csproj")]
+    public async Task Check_NonExistentFile_ThrowsArgumentException(string extension)
     {
+        var path = Path.Combine(Path.GetTempPath(), $"nonexistent_{Guid.NewGuid():N}{extension}");
         var ex = await Assert.ThrowsAsync<ArgumentException>(
             () => ReferenceChecker.Check(path));
         Assert.Contains("exist", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
-    [InlineData("/tmp/test.sln")]
-    [InlineData("/tmp/test.slnx")]
-    [InlineData("/tmp/test.csproj")]
-    public async Task Check_ValidExtensionButNonExistent_DoesNotRejectExtension(string path)
+    [InlineData(".sln")]
+    [InlineData(".slnx")]
+    [InlineData(".csproj")]
+    public async Task Check_ValidExtensionButNonExistent_DoesNotRejectExtension(string extension)
     {
+        var path = Path.Combine(Path.GetTempPath(), $"nonexistent_{Guid.NewGuid():N}{extension}");
         var ex = await Assert.ThrowsAsync<ArgumentException>(
             () => ReferenceChecker.Check(path));
-        // 應該是「檔案不存在」的錯誤，不是「副檔名無效」的錯誤
         Assert.DoesNotContain("extension", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -56,22 +58,21 @@ public class ReferenceCheckerTests
     [Fact]
     public async Task RemoveMethodsAsync_NullSignatures_Throws()
     {
+        var path = Path.Combine(Path.GetTempPath(), $"test_{Guid.NewGuid():N}.sln");
         await Assert.ThrowsAnyAsync<Exception>(
-            () => ReferenceChecker.RemoveMethodsAsync("/tmp/test.sln", null!));
+            () => ReferenceChecker.RemoveMethodsAsync(path, null!));
     }
 
     [Fact]
     public async Task RemoveMethodAsync_NonExistentFile_ReturnsExpectedError()
     {
-        // RemoveMethodAsync 不做預先驗證，會在 OpenSolutionAsync 時失敗
-        // 確認不會拋出未處理的例外
+        var path = Path.Combine(Path.GetTempPath(), $"nonexistent_{Guid.NewGuid():N}.sln");
         try
         {
-            await ReferenceChecker.RemoveMethodAsync("/tmp/nonexistent.sln", "some signature");
+            await ReferenceChecker.RemoveMethodAsync(path, "some signature");
         }
         catch (Exception ex)
         {
-            // 預期會因為檔案不存在而失敗，但不應該是 NullReferenceException
             Assert.IsNotType<NullReferenceException>(ex);
         }
     }

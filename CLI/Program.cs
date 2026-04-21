@@ -39,6 +39,8 @@ public class Program
         catch (Exception ex)
         {
             Console.WriteLine($"錯誤: {ex.Message}");
+            if (ex.InnerException is not null)
+                Console.WriteLine($"  內部例外: {ex.InnerException.Message}");
         }
     }
 }

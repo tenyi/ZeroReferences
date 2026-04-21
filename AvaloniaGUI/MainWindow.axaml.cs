@@ -208,6 +208,8 @@ public partial class MainWindow : Window
         {
             LoadingOverlay.IsVisible = false;
             CheckProjectButton.IsEnabled = true;
+            RemoveMethodButton.IsEnabled = ResultListBox.SelectedItems != null &&
+                                           ResultListBox.SelectedItems.Count > 0;
         }
     }
 
@@ -249,9 +251,9 @@ public partial class MainWindow : Window
             if (selectedItem == FilterPublicOnly)
                 return method.StartsWith("public ", System.StringComparison.OrdinalIgnoreCase);
             if (selectedItem == FilterPrivateOnly)
-                return method.StartsWith("private", System.StringComparison.OrdinalIgnoreCase);
+                return method.StartsWith("private ", System.StringComparison.OrdinalIgnoreCase);
             if (selectedItem == FilterProtectedOnly)
-                return method.StartsWith("protected", System.StringComparison.OrdinalIgnoreCase);
+                return method.StartsWith("protected ", System.StringComparison.OrdinalIgnoreCase);
             return true;
         }).ToList();
 

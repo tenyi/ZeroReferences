@@ -35,14 +35,12 @@ namespace ZeroReferences
         /// 判斷方法的存取層級是否為本工具要掃描的範圍（public / private / protected）。
         /// 另外一併納入 protected internal 與 private protected。
         /// </summary>
-        private static bool ShouldAnalyzeAccessibility(Microsoft.CodeAnalysis.Accessibility accessibility)
-        {
-            return accessibility == Microsoft.CodeAnalysis.Accessibility.Public ||
-                   accessibility == Microsoft.CodeAnalysis.Accessibility.Private ||
-                   accessibility == Microsoft.CodeAnalysis.Accessibility.Protected ||
-                   accessibility == Microsoft.CodeAnalysis.Accessibility.ProtectedOrInternal ||
-                   accessibility == Microsoft.CodeAnalysis.Accessibility.ProtectedAndInternal;
-        }
+        private static bool ShouldAnalyzeAccessibility(Accessibility accessibility) =>
+            accessibility is Accessibility.Public
+                or Accessibility.Private
+                or Accessibility.Protected
+                or Accessibility.ProtectedOrInternal
+                or Accessibility.ProtectedAndInternal;
 
         /// <summary>
         /// 產生方法顯示簽名，供 UI 顯示與刪除比對共用，避免格式不一致。
@@ -82,7 +80,7 @@ namespace ZeroReferences
             }
 
             // ===== 建立工作區並開啟解決方案或專案 =====
-            using var workspace = MSBuildWorkspace.Create();
+            using var workspace = CreateWorkspace();
             Solution solution;
             IEnumerable<Project> projects;
 
@@ -138,12 +136,13 @@ namespace ZeroReferences
                         string name = GetMethodSignature(symbol);
 
                         // 跳過 Controller 類別中的方法（通常是 MVC/Web API 的控制器方法）
-                        if (name.Contains("Controller"))
+                        // 使用 ContainingType.Name 而非完整簽名，避免誤判包含此字串的類別名稱
+                        if (symbol.ContainingType.Name.Contains("Controller"))
                         {
                             continue;
                         }
                         // 跳過 Test 相關類別中的方法（測試方法的引用不計入）
-                        if (name.Contains("Test"))
+                        if (symbol.ContainingType.Name.Contains("Test"))
                         {
                             continue;
                         }
@@ -181,7 +180,7 @@ namespace ZeroReferences
             string solutionPath, List<string> methodSignatures)
         {
             // ===== 建立工作區並開啟解決方案或專案 =====
-            using var workspace = MSBuildWorkspace.Create();
+            using var workspace = CreateWorkspace();
             var solution = await OpenSolutionOrProjectAsync(workspace, solutionPath);
 
             // 用於記錄需要從各文件中刪除的方法語法節點
@@ -316,7 +315,7 @@ namespace ZeroReferences
             string solutionPath, string methodSignature)
         {
             // ===== 建立工作區並開啟解決方案或專案 =====
-            using var workspace = MSBuildWorkspace.Create();
+            using var workspace = CreateWorkspace();
             var solution = await OpenSolutionOrProjectAsync(workspace, solutionPath);
 
             // 用於記錄需要從各文件中刪除的方法語法節點
@@ -687,6 +686,17 @@ namespace ZeroReferences
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// 建立 MSBuildWorkspace 並註冊診斷事件，記錄載入失敗資訊至 Debug 輸出。
+        /// </summary>
+        private static MSBuildWorkspace CreateWorkspace()
+        {
+            var workspace = MSBuildWorkspace.Create();
+            workspace.RegisterWorkspaceFailedHandler(e =>
+                System.Diagnostics.Debug.WriteLine($"[ZeroReferences] MSBuild 診斷: {e.Diagnostic}"));
+            return workspace;
         }
 
         /// <summary>

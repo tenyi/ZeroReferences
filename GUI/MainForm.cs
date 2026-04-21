@@ -303,6 +303,7 @@
             {
                 checkProjectButton.Enabled = true;
                 UseWaitCursor = false;
+                removeMethodButton.Enabled = resultListBox.SelectedItems.Count > 0;
             }
         }
     }
