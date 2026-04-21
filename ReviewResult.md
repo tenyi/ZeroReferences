@@ -40,28 +40,16 @@
 
 ---
 
-### 3. `Core/ReferenceChecker.cs` — 大量程式碼重複 (P2)
+### 3. ~~`Core/ReferenceChecker.cs` — 大量程式碼重複~~ ✅ 已修復 (P2)
 
-以下 5 個方法仍存在重複的「遍歷 solution → 取得 compilation → 遍歷 documents → 取得 methods」模式：
+抽取通用的 `EnumerateMethodsAsync(Solution)` 方法，回傳 `List<(Document, MethodDeclarationSyntax, IMethodSymbol)>`。原本 6 個方法（含 `Check`）中重複的「遍歷 solution → compilation → documents → methods」模式全部改為呼叫此列舉器。
 
-| 方法 | 行號 |
-|------|------|
-| `RemoveMethodsAsync` | 194-247 |
-| `RemoveMethodAsync` | 326-378 |
-| `FindAndMarkInterfaceMethodForRemoval` | 440-476 |
-| `FindAllImplementingMethodsForRemoval` | 554-621 |
-| `FindAndMarkOverridingMethodsForRemoval` | 655-689 |
+同時修正以下問題：
+- `FindAndMarkImplicitInterfaceMethodsForRemoval` 和 `FindAllImplementingMethodsForRemoval` 的 `Compilation` 參數從未被使用，已移除。
+- `FindAndMarkInterfaceMethodForRemoval` 改用 `AddNodeToRemove` 取代手動字典插入。
+- `Check` 方法改用 `OpenSolutionOrProjectAsync` 取代自行處理 .sln/.csproj 分支。
 
-已有 `AddNodeToRemove`（行 627）和 `OpenSolutionOrProjectAsync`（行 706）兩個 helper，減少了部分重複。核心遍歷模式仍可進一步抽取。
-
-**建議：** 抽取通用的 `EnumerateMethodsAsync` 列舉器：
-
-```csharp
-private static async Task<IEnumerable<(Document document, MethodDeclarationSyntax method, IMethodSymbol symbol, SemanticModel model)>>
-    EnumerateMethodsAsync(Solution solution)
-```
-
-這樣每個方法只需 `foreach` 消費結果，不需重複寫遍歷邏輯。需注意 `compilation` 的快取（同一專案只 `GetCompilationAsync` 一次）。
+檔案從 730 行縮減至約 460 行。
 
 ---
 
@@ -110,6 +98,7 @@ private static void ShowMessage(string message)
 這表示重構或修改核心邏輯時，缺乏安全網。
 
 **建議：** 建立包含小型解決方案的測試 fixture（可用 Roslyn `AdhocWorkspace` 或嵌入式測試專案），至少覆蓋：
+
 1. 基本孤兒方法偵測
 2. 有引用的方法不被列入
 3. Controller / Test 類別排除
@@ -152,7 +141,7 @@ if (symbol.Name == "Main") { continue; }
 | 優先級 | 問題 | 影響 | 工作量 |
 |--------|------|------|--------|
 | **P2** | #7 測試覆蓋率不足 | 回歸風險 | 高（需建立測試 fixture） |
-| **P2** | #3 程式碼重複 | 可維護性 | 中（抽取列舉器） |
+| **P2** | ~~#3 程式碼重複~~ ✅ | ~~可維護性~~ | ~~中（抽取列舉器）~~ |
 | **P2** | ~~#1 部分失敗語意不明確~~ ✅ | 呼叫端行為預期 | 低（API 調整或文件補充） |
 | **P3** | #4 無 CancellationToken | 大型方案無法取消 | 中（需修改 API 簽名） |
 | **P3** | ~~#2 List.Contains O(n)~~ ✅ | ~~大量節點時效能~~ | ~~中（型別變更範圍廣）~~ |
