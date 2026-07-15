@@ -23,8 +23,8 @@
 | 方法 | 說明 |
 |------|------|
 | `Check(string solutionPath)` | 分析解決方案，回傳未參照方法清單 |
-| `RemoveMethodsAsync(string path, List<string> signatures)` | 批次刪除多個方法 |
-| `RemoveMethodAsync(string path, string signature)` | 刪除單一方法 |
+| `RemoveMethodsAsync(string path, IReadOnlyCollection<MethodResult> methods)` | 批次刪除多個方法 |
+| `RemoveMethodAsync(string path, MethodResult method)` | 刪除單一方法 |
 
 **依賴：**
 - Microsoft.CodeAnalysis 5.3.0 (Roslyn)

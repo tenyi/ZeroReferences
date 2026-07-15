@@ -36,7 +36,12 @@
         /// <summary>
         /// 保存最新一次檢查得到的完整方法清單，供 UI 篩選使用。
         /// </summary>
-        private readonly List<string> allMethodResults = new List<string>();
+        private readonly List<MethodResult> allMethodResults = new List<MethodResult>();
+
+        /// <summary>
+        /// 目前篩選後顯示的結果，順序與 ListBox 項目一致。
+        /// </summary>
+        private readonly List<MethodResult> visibleMethodResults = new List<MethodResult>();
 
         /// <summary>
         /// 存取層級篩選下拉選單。
@@ -108,34 +113,36 @@
         private void ApplyAccessibilityFilter()
         {
             resultListBox.Items.Clear();
+            visibleMethodResults.Clear();
 
             string selectedFilter = accessibilityFilterComboBox.SelectedItem?.ToString() ?? AccessibilityFilterAll;
 
-            foreach (var methodSignature in allMethodResults)
+            foreach (var methodResult in allMethodResults)
             {
                 if (selectedFilter == AccessibilityFilterPublicOnly)
                 {
-                    if (!methodSignature.StartsWith("public ", StringComparison.OrdinalIgnoreCase))
+                    if (!methodResult.Signature.StartsWith("public ", StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
                     }
                 }
                 else if (selectedFilter == AccessibilityFilterPrivateOnly)
                 {
-                    if (!methodSignature.StartsWith("private ", StringComparison.OrdinalIgnoreCase))
+                    if (!methodResult.Signature.StartsWith("private ", StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
                     }
                 }
                 else if (selectedFilter == AccessibilityFilterProtectedOnly)
                 {
-                    if (!methodSignature.StartsWith("protected ", StringComparison.OrdinalIgnoreCase))
+                    if (!methodResult.Signature.StartsWith("protected ", StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
                     }
                 }
 
-                resultListBox.Items.Add(methodSignature);
+                visibleMethodResults.Add(methodResult);
+                resultListBox.Items.Add(methodResult.DisplayName);
             }
 
             removeMethodButton.Enabled = resultListBox.SelectedItems.Count > 0;
@@ -153,6 +160,7 @@
         {
             resultListBox.Items.Clear();
             allMethodResults.Clear();
+            visibleMethodResults.Clear();
             // 防止重複點擊並顯示等待游標
             checkProjectButton.Enabled = false;
             UseWaitCursor = true;
@@ -187,6 +195,7 @@
             // 清空之前的結果
             resultListBox.Items.Clear();
             allMethodResults.Clear();
+            visibleMethodResults.Clear();
 
             // 建立並顯示開啟檔案對話框
             using (OpenFileDialog openFileDialog = new OpenFileDialog())
@@ -244,21 +253,25 @@
         /// <param name="e">事件參數。</param>
         private async void removeMethodButton_Click(object sender, EventArgs e)
         {
-            // 取得所有選取的方法簽名
+            // 取得所有選取的方法結果
             var selectedItems = resultListBox.SelectedItems;
             if (selectedItems.Count == 0) return;
 
-            // 收集選取的簽名清單
-            var signatures = new List<string>();
+            // 依 ListBox 順序還原精確的結果模型
+            var methods = new List<MethodResult>();
             foreach (var item in selectedItems)
             {
-                signatures.Add(item.ToString()!);
+                var method = visibleMethodResults.FirstOrDefault(
+                    result => result.DisplayName == item.ToString());
+                if (method != null)
+                    methods.Add(method);
             }
+            if (methods.Count == 0) return;
 
             // 彈出確認對話框，顯示即將刪除的方法數量及清單
-            string methodList = string.Join("\n", signatures);
+            string methodList = string.Join("\n", methods.Select(method => method.DisplayName));
             var confirmResult = MessageBox.Show(
-                $"即將刪除 {signatures.Count} 個方法：\n{methodList}\n\n" +
+                $"即將刪除 {methods.Count} 個方法：\n{methodList}\n\n" +
                 "若有實作介面，介面中的方法也會一併刪除。\n\n" +
                 "確定要繼續嗎？",
                 "確認刪除",
@@ -276,7 +289,7 @@
             try
             {
                 // 執行批次刪除
-                var (result, message) = await ReferenceChecker.RemoveMethodsAsync(solutionPath, signatures);
+                var (result, message) = await ReferenceChecker.RemoveMethodsAsync(solutionPath, methods);
 
                 // 顯示結果
                 if (result == RemoveResult.Success)

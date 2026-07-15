@@ -34,7 +34,10 @@ public partial class MainWindow : Window
     private string _solutionPath = string.Empty;
 
     /// <summary>保存最新一次檢查得到的完整方法清單，供 UI 篩選使用。</summary>
-    private readonly List<string> _allMethodResults = new();
+    private readonly List<MethodResult> _allMethodResults = new();
+
+    /// <summary>目前篩選後顯示的結果，順序與 ListBox 項目一致。</summary>
+    private List<MethodResult> _visibleMethodResults = new();
 
     /// <summary>
     /// 建構函式。初始化 XAML 元件。
@@ -85,6 +88,7 @@ public partial class MainWindow : Window
                     // 清空之前的結果
                     ResultListBox.ItemsSource = null;
                     _allMethodResults.Clear();
+                    _visibleMethodResults.Clear();
 
                     _solutionPath = filePath;
                     SolutionPathText.Text = _solutionPath;
@@ -107,6 +111,7 @@ public partial class MainWindow : Window
         // 清空之前的結果
         ResultListBox.ItemsSource = null;
         _allMethodResults.Clear();
+        _visibleMethodResults.Clear();
 
         // 防止重複點擊
         CheckProjectButton.IsEnabled = false;
@@ -147,15 +152,19 @@ public partial class MainWindow : Window
     /// </summary>
     private async void RemoveMethodButton_Click(object? sender, RoutedEventArgs e)
     {
-        // 取得所有選取的方法簽名
+        // 取得所有選取的方法結果
         var selectedItems = ResultListBox.SelectedItems?
             .Cast<string>()
+            .Select(item => _visibleMethodResults.FirstOrDefault(
+                method => method.DisplayName == item))
+            .Where(method => method != null)
+            .Cast<MethodResult>()
             .ToList();
 
         if (selectedItems == null || selectedItems.Count == 0) return;
 
         // 顯示確認對話框
-        string methodList = string.Join("\n", selectedItems);
+        string methodList = string.Join("\n", selectedItems.Select(method => method.DisplayName));
         var confirmDialog = new ConfirmDialog(
             "確認刪除",
             $"即將刪除 {selectedItems.Count} 個方法：\n{methodList}\n\n" +
@@ -186,6 +195,7 @@ public partial class MainWindow : Window
                 // 重新執行檢查以更新清單
                 ResultListBox.ItemsSource = null;
                 _allMethodResults.Clear();
+                _visibleMethodResults.Clear();
 
                 var checkResult = await ReferenceChecker.Check(_solutionPath);
                 if (checkResult != null)
@@ -202,6 +212,7 @@ public partial class MainWindow : Window
                 // 部分成功仍需重新檢查以更新清單
                 ResultListBox.ItemsSource = null;
                 _allMethodResults.Clear();
+                _visibleMethodResults.Clear();
 
                 var checkResult = await ReferenceChecker.Check(_solutionPath);
                 if (checkResult != null)
@@ -262,18 +273,20 @@ public partial class MainWindow : Window
         var selectedItem = (comboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? FilterAll;
 
         // 根據篩選條件過濾方法清單
-        var filtered = _allMethodResults.Where(method =>
+        _visibleMethodResults = _allMethodResults.Where(method =>
         {
             if (selectedItem == FilterPublicOnly)
-                return method.StartsWith("public ", System.StringComparison.OrdinalIgnoreCase);
+                return method.Signature.StartsWith("public ", System.StringComparison.OrdinalIgnoreCase);
             if (selectedItem == FilterPrivateOnly)
-                return method.StartsWith("private ", System.StringComparison.OrdinalIgnoreCase);
+                return method.Signature.StartsWith("private ", System.StringComparison.OrdinalIgnoreCase);
             if (selectedItem == FilterProtectedOnly)
-                return method.StartsWith("protected ", System.StringComparison.OrdinalIgnoreCase);
+                return method.Signature.StartsWith("protected ", System.StringComparison.OrdinalIgnoreCase);
             return true;
         }).ToList();
 
-        ResultListBox.ItemsSource = filtered;
+        ResultListBox.ItemsSource = _visibleMethodResults
+            .Select(method => method.DisplayName)
+            .ToList();
         RemoveMethodButton.IsEnabled = false;
     }
 

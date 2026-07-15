@@ -22,6 +22,23 @@ namespace ZeroReferences
     }
 
     /// <summary>
+    /// 表示掃描到的方法及其在解決方案中的唯一來源位置。
+    /// </summary>
+    public sealed record MethodResult(
+        string Signature,
+        string ProjectPath,
+        string DocumentPath,
+        int SpanStart)
+    {
+        /// <summary>
+        /// 顯示給使用者的完整方法簽名。
+        /// </summary>
+        public string DisplayName => $"{Signature} [{ProjectPath}: {DocumentPath}]";
+
+        public override string ToString() => Signature;
+    }
+
+    /// <summary>
     /// 提供檢查 .NET 解決方案中未參照方法之功能的靜態類別。
     /// 使用 Microsoft.CodeAnalysis (Roslyn) 組合式 API 分析解決方案，
     /// 找出指定存取層級（public / private / protected）且在整個解決方案中沒有被引用的方法（孤兒方法）。
@@ -67,10 +84,10 @@ namespace ZeroReferences
         /// 遍歷解決方案中所有專案的文件，列舉所有方法宣告及其對應的語意符號。
         /// 快取每個專案的 Compilation，每個專案只呼叫一次 GetCompilationAsync。
         /// </summary>
-        private static async Task<List<(Document document, MethodDeclarationSyntax method, IMethodSymbol symbol)>>
+        private static async Task<List<(Project project, Document document, MethodDeclarationSyntax method, IMethodSymbol symbol)>>
             EnumerateMethodsAsync(Solution solution)
         {
-            var result = new List<(Document document, MethodDeclarationSyntax method, IMethodSymbol symbol)>();
+            var result = new List<(Project project, Document document, MethodDeclarationSyntax method, IMethodSymbol symbol)>();
 
             foreach (var project in solution.Projects)
             {
@@ -91,7 +108,7 @@ namespace ZeroReferences
                         var symbol = model.GetDeclaredSymbol(methodNode) as IMethodSymbol;
                         if (symbol == null) continue;
 
-                        result.Add((document, methodNode, symbol));
+                        result.Add((project, document, methodNode, symbol));
                     }
                 }
             }
@@ -103,12 +120,12 @@ namespace ZeroReferences
         /// 分析指定的解決方案檔案，找出所有未被引用的 public / private / protected 方法。
         /// </summary>
         /// <param name="solutionPath">.sln/.slnx/.csproj 檔案的完整路徑。</param>
-        /// <returns>回傳包含所有未參照方法全限定名稱的清單。</returns>
+        /// <returns>回傳包含所有未參照方法及其來源位置的清單。</returns>
         /// <exception cref="ArgumentException">當路徑為空、格式不正確或檔案不存在時拋出。</exception>
-        public static async Task<List<string>> Check(string solutionPath)
+        public static async Task<List<MethodResult>> Check(string solutionPath)
         {
             // 存放未參照方法的清單
-            List<string> list = new List<string>();
+            List<MethodResult> list = new List<MethodResult>();
 
             // ===== 參數驗證 =====
             if (string.IsNullOrEmpty(solutionPath))
@@ -130,7 +147,7 @@ namespace ZeroReferences
             var solution = await OpenSolutionOrProjectAsync(workspace, solutionPath);
 
             // ===== 遍歷所有方法並檢查引用情形 =====
-            foreach (var (_, _, symbol) in await EnumerateMethodsAsync(solution))
+            foreach (var (project, document, method, symbol) in await EnumerateMethodsAsync(solution))
             {
                 // 只檢查目標存取層級的方法（public / private / protected）
                 if (!ShouldAnalyzeAccessibility(symbol.DeclaredAccessibility))
@@ -156,7 +173,11 @@ namespace ZeroReferences
                 // 引用次數為 0，表示此方法是孤兒方法
                 if (referenceCount == 0)
                 {
-                    list.Add(name);
+                    list.Add(new MethodResult(
+                        name,
+                        project.FilePath ?? string.Empty,
+                        document.FilePath ?? string.Empty,
+                        method.SpanStart));
                 }
             }
 
@@ -170,10 +191,10 @@ namespace ZeroReferences
         /// 並一併顯示 <paramref name="message"/> 以提供完整資訊。
         /// </summary>
         /// <param name="solutionPath">.sln/.slnx/.csproj 檔案的完整路徑。</param>
-        /// <param name="methodSignatures">要刪除的方法完整簽字串清單。</param>
+        /// <param name="methods">要刪除的方法結果清單。</param>
         /// <returns>回傳 tuple，包含刪除結果狀態及描述訊息。</returns>
         public static async Task<(RemoveResult result, string message)> RemoveMethodsAsync(
-            string solutionPath, List<string> methodSignatures)
+            string solutionPath, IReadOnlyCollection<MethodResult> methods)
         {
             // ===== 建立工作區並開啟解決方案或專案 =====
             using var workspace = CreateWorkspace();
@@ -182,43 +203,28 @@ namespace ZeroReferences
             // 用於記錄需要從各文件中刪除的方法語法節點
             var nodesToRemove = new Dictionary<Microsoft.CodeAnalysis.DocumentId, HashSet<MethodDeclarationSyntax>>();
 
-            // 記錄每個簽名是否找到對應方法
-            var foundSignatures = new HashSet<string>();
-            var signatureSet = new HashSet<string>(methodSignatures);
+            // 記錄每個結果是否找到對應宣告
+            var foundMethods = new HashSet<MethodResult>();
+            var allMethods = await EnumerateMethodsAsync(solution);
 
-            // ===== 遍歷解決方案尋找所有目標方法 =====
-            foreach (var (document, method, symbol) in await EnumerateMethodsAsync(solution))
+            // ===== 依專案、文件與宣告位置尋找目標方法 =====
+            foreach (var target in methods)
             {
-                string signature = GetMethodSignature(symbol);
-
-                // 比對是否為任一目標簽名
-                if (signatureSet.Contains(signature))
+                foreach (var (project, document, method, symbol) in allMethods)
                 {
-                    foundSignatures.Add(signature);
+                    if (!IsSameDeclaration(target, project, document, method))
+                        continue;
+
+                    foundMethods.Add(target);
                     AddNodeToRemove(document.Id, method, nodesToRemove);
 
-                    // 處理 Explicit Interface Implementation
-                    foreach (var ifaceMethod in symbol.ExplicitInterfaceImplementations)
-                    {
-                        await FindAndMarkInterfaceMethodForRemoval(
-                            solution, ifaceMethod, nodesToRemove);
-                    }
-
-                    // 處理 Implicit Interface Implementation
-                    await FindAndMarkImplicitInterfaceMethodsForRemoval(
-                        solution, symbol, nodesToRemove);
-
-                    // 處理 override 鏈：找出所有 override 此方法的 derived class 方法
-                    if (symbol.IsVirtual || symbol.IsAbstract || symbol.IsOverride)
-                    {
-                        await FindAndMarkOverridingMethodsForRemoval(
-                            solution, symbol, nodesToRemove);
-                    }
+                    await MarkRelatedMethodsForRemoval(solution, symbol, nodesToRemove);
+                    break;
                 }
             }
 
             // ===== 檢查是否有未找到的簽名 =====
-            var notFound = methodSignatures.Where(s => !foundSignatures.Contains(s)).ToList();
+            var notFound = methods.Where(method => !foundMethods.Contains(method)).ToList();
             if (nodesToRemove.Count == 0)
             {
                 return (RemoveResult.Failed, $"找不到任何指定的方法。");
@@ -263,9 +269,9 @@ namespace ZeroReferences
                 if (notFound.Count > 0)
                 {
                     return (RemoveResult.Partial,
-                        $"已成功刪除 {foundSignatures.Count} 個方法（共 {methodSignatures.Count} 個，{notFound.Count} 個簽名未找到匹配方法）。");
+                        $"已成功刪除 {foundMethods.Count} 個方法（共 {methods.Count} 個，{notFound.Count} 個方法未找到匹配宣告）。");
                 }
-                return (RemoveResult.Success, $"已成功刪除 {foundSignatures.Count} 個方法。");
+                return (RemoveResult.Success, $"已成功刪除 {foundMethods.Count} 個方法。");
             }
             else
             {
@@ -278,10 +284,10 @@ namespace ZeroReferences
         /// 若該方法有實作介面（explicit 或 implicit），也會一併刪除介面中的方法宣告。
         /// </summary>
         /// <param name="solutionPath">.sln/.slnx/.csproj 檔案的完整路徑。</param>
-        /// <param name="methodSignature">方法的完整簽名字串（由 ToDisplayString() 產生）。</param>
+        /// <param name="method">要刪除的方法結果。</param>
         /// <returns>回傳 tuple，包含刪除結果狀態及描述訊息。</returns>
         public static async Task<(RemoveResult result, string message)> RemoveMethodAsync(
-            string solutionPath, string methodSignature)
+            string solutionPath, MethodResult method)
         {
             // ===== 建立工作區並開啟解決方案或專案 =====
             using var workspace = CreateWorkspace();
@@ -290,39 +296,22 @@ namespace ZeroReferences
             // 用於記錄需要從各文件中刪除的方法語法節點
             var nodesToRemove = new Dictionary<Microsoft.CodeAnalysis.DocumentId, HashSet<MethodDeclarationSyntax>>();
 
-            // ===== 遍歷解決方案尋找目標方法 =====
-            foreach (var (document, method, symbol) in await EnumerateMethodsAsync(solution))
+            // ===== 依專案、文件與宣告位置尋找目標方法 =====
+            var allMethods = await EnumerateMethodsAsync(solution);
+            foreach (var (project, document, syntax, symbol) in allMethods)
             {
-                // 比對簽名字串是否與目標一致
-                if (GetMethodSignature(symbol) == methodSignature)
+                if (IsSameDeclaration(method, project, document, syntax))
                 {
-                    AddNodeToRemove(document.Id, method, nodesToRemove);
-
-                    // 處理 Explicit Interface Implementation
-                    var explicitInterfaces = symbol.ExplicitInterfaceImplementations;
-                    foreach (var ifaceMethod in explicitInterfaces)
-                    {
-                        await FindAndMarkInterfaceMethodForRemoval(
-                            solution, ifaceMethod, nodesToRemove);
-                    }
-
-                    // 處理 Implicit Interface Implementation
-                    await FindAndMarkImplicitInterfaceMethodsForRemoval(
-                        solution, symbol, nodesToRemove);
-
-                    // 處理 override 鏈
-                    if (symbol.IsVirtual || symbol.IsAbstract || symbol.IsOverride)
-                    {
-                        await FindAndMarkOverridingMethodsForRemoval(
-                            solution, symbol, nodesToRemove);
-                    }
+                    AddNodeToRemove(document.Id, syntax, nodesToRemove);
+                    await MarkRelatedMethodsForRemoval(solution, symbol, nodesToRemove);
+                    break;
                 }
             }
 
             // ===== 若找不到任何方法，回傳失敗 =====
             if (nodesToRemove.Count == 0)
             {
-                return (RemoveResult.Failed, $"找不到方法：{methodSignature}");
+                return (RemoveResult.Failed, $"找不到方法：{method.DisplayName}");
             }
 
             // ===== 執行刪除操作 =====
@@ -356,7 +345,7 @@ namespace ZeroReferences
             bool applied = workspace.TryApplyChanges(updatedSolution);
             if (applied)
             {
-                return (RemoveResult.Success, $"已成功刪除方法：{methodSignature}");
+                return (RemoveResult.Success, $"已成功刪除方法：{method.DisplayName}");
             }
             else
             {
@@ -377,7 +366,7 @@ namespace ZeroReferences
             Dictionary<Microsoft.CodeAnalysis.DocumentId, HashSet<MethodDeclarationSyntax>> nodesToRemove)
         {
             // 遍歷所有方法，找到與介面方法符號匹配的方法
-            foreach (var (document, method, symbol) in await EnumerateMethodsAsync(solution))
+            foreach (var (_, document, method, symbol) in await EnumerateMethodsAsync(solution))
             {
                 if (SymbolEqualityComparer.Default.Equals(symbol, ifaceMethod))
                 {
@@ -407,38 +396,16 @@ namespace ZeroReferences
             // 遍歷此類別的所有介面（包含繼承鏈上的介面）
             foreach (var iface in containingType.AllInterfaces)
             {
-                // 在介面中尋找與目標方法同名且簽名一致的方法
-                foreach (var member in iface.GetMembers(methodSymbol.Name))
+                foreach (var member in iface.GetMembers(methodSymbol.Name).OfType<IMethodSymbol>())
                 {
-                    if (member is IMethodSymbol ifaceMethod)
+                    var implementation = containingType.FindImplementationForInterfaceMember(member);
+                    if (SymbolEqualityComparer.Default.Equals(implementation, methodSymbol))
                     {
-                        // 比對參數數量
-                        if (ifaceMethod.Parameters.Length != methodSymbol.Parameters.Length)
-                            continue;
+                        await FindAndMarkInterfaceMethodForRemoval(
+                            solution, member, nodesToRemove);
 
-                        // 逐一比對參數型別是否一致
-                        bool paramsMatch = true;
-                        for (int i = 0; i < ifaceMethod.Parameters.Length; i++)
-                        {
-                            if (!SymbolEqualityComparer.Default.Equals(
-                                ifaceMethod.Parameters[i].Type,
-                                methodSymbol.Parameters[i].Type))
-                            {
-                                paramsMatch = false;
-                                break;
-                            }
-                        }
-
-                        if (paramsMatch)
-                        {
-                            // 找到匹配的介面方法，標記為待刪除
-                            await FindAndMarkInterfaceMethodForRemoval(
-                                solution, ifaceMethod, nodesToRemove);
-
-                            // 找到所有實作此介面方法的類別方法（含 override）並標記刪除
-                            await FindAllImplementingMethodsForRemoval(
-                                solution, ifaceMethod, nodesToRemove);
-                        }
+                        await FindAllImplementingMethodsForRemoval(
+                            solution, member, nodesToRemove);
                     }
                 }
             }
@@ -456,7 +423,7 @@ namespace ZeroReferences
             IMethodSymbol ifaceMethod,
             Dictionary<Microsoft.CodeAnalysis.DocumentId, HashSet<MethodDeclarationSyntax>> nodesToRemove)
         {
-            foreach (var (document, method, symbol) in await EnumerateMethodsAsync(solution))
+            foreach (var (_, document, method, symbol) in await EnumerateMethodsAsync(solution))
             {
                 // 檢查是否是 explicit implementation
                 foreach (var explicitImpl in symbol.ExplicitInterfaceImplementations)
@@ -468,39 +435,50 @@ namespace ZeroReferences
                     }
                 }
 
-                // 檢查是否為 implicit implementation（方法名稱和參數匹配介面方法）
-                if (symbol.Name == ifaceMethod.Name &&
-                    symbol.Parameters.Length == ifaceMethod.Parameters.Length)
+                var methodContainingType = symbol.ContainingType;
+                var implementation = methodContainingType?.FindImplementationForInterfaceMember(ifaceMethod);
+                if (SymbolEqualityComparer.Default.Equals(implementation, symbol))
                 {
-                    bool paramsMatch = true;
-                    for (int i = 0; i < symbol.Parameters.Length; i++)
-                    {
-                        if (!SymbolEqualityComparer.Default.Equals(
-                            symbol.Parameters[i].Type,
-                            ifaceMethod.Parameters[i].Type))
-                        {
-                            paramsMatch = false;
-                            break;
-                        }
-                    }
-
-                    if (paramsMatch)
-                    {
-                        // 檢查此方法是否在實作該介面的類型中
-                        var methodContainingType = symbol.ContainingType;
-                        if (methodContainingType != null)
-                        {
-                            foreach (var iface in methodContainingType.AllInterfaces)
-                            {
-                                if (SymbolEqualityComparer.Default.Equals(iface, ifaceMethod.ContainingType))
-                                {
-                                    AddNodeToRemove(document.Id, method, nodesToRemove);
-                                    break;
-                                }
-                            }
-                        }
-                    }
+                    AddNodeToRemove(document.Id, method, nodesToRemove);
                 }
+            }
+        }
+
+        /// <summary>
+        /// 判斷結果模型是否指向指定的唯一方法宣告。
+        /// </summary>
+        private static bool IsSameDeclaration(
+            MethodResult target,
+            Project project,
+            Document document,
+            MethodDeclarationSyntax method)
+        {
+            return string.Equals(target.ProjectPath, project.FilePath, StringComparison.Ordinal)
+                && string.Equals(target.DocumentPath, document.FilePath, StringComparison.Ordinal)
+                && target.SpanStart == method.SpanStart;
+        }
+
+        /// <summary>
+        /// 標記指定方法相關的介面宣告與 override 方法。
+        /// </summary>
+        private static async Task MarkRelatedMethodsForRemoval(
+            Solution solution,
+            IMethodSymbol symbol,
+            Dictionary<Microsoft.CodeAnalysis.DocumentId, HashSet<MethodDeclarationSyntax>> nodesToRemove)
+        {
+            foreach (var ifaceMethod in symbol.ExplicitInterfaceImplementations)
+            {
+                await FindAndMarkInterfaceMethodForRemoval(
+                    solution, ifaceMethod, nodesToRemove);
+            }
+
+            await FindAndMarkImplicitInterfaceMethodsForRemoval(
+                solution, symbol, nodesToRemove);
+
+            if (symbol.IsVirtual || symbol.IsAbstract || symbol.IsOverride)
+            {
+                await FindAndMarkOverridingMethodsForRemoval(
+                    solution, symbol, nodesToRemove);
             }
         }
 
@@ -532,7 +510,7 @@ namespace ZeroReferences
             IMethodSymbol methodToOverride,
             Dictionary<Microsoft.CodeAnalysis.DocumentId, HashSet<MethodDeclarationSyntax>> nodesToRemove)
         {
-            foreach (var (document, method, symbol) in await EnumerateMethodsAsync(solution))
+            foreach (var (_, document, method, symbol) in await EnumerateMethodsAsync(solution))
             {
                 // 檢查此方法的 override 鏈是否包含目標方法
                 var overridden = symbol.OverriddenMethod;

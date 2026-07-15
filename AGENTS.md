@@ -21,7 +21,7 @@
 | 檔案 | 職責 | 備註 |
 |------|------|------|
 | **`MainForm.cs`** | UI 互動、選擇 .sln 檔案、顯示結果 | 目前主要 UI，透過 Designer 檔案掛載控制項 |
-| **`ReferenceChecker.cs`** | 核心分析引擎，使用 Roslyn 逐一檢查方法引用次數 | `Check()` 為靜態 async 方法，回傳 `List<string>` |
+| **`ReferenceChecker.cs`** | 核心分析引擎，使用 Roslyn 逐一檢查方法引用次數 | `Check()` 為靜態 async 方法，回傳 `List<MethodResult>` |
 | **`ModalDialog.cs`** | 長時作業期間的等待提示框 | `ShowInTaskbar = false`，避免在工作列出現 |
 
 ### 附屬檔案

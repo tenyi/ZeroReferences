@@ -24,7 +24,7 @@ public class Program
     private const string RESET = ESC + "[0m";
 
     /// <summary>儲存所有檢查結果。</summary>
-    private static List<string> _allResults = new();
+    private static List<MethodResult> _allResults = new();
 
     /// <summary>目前篩選模式：0=全部, 1=public, 2=private, 3=protected。</summary>
     private static int _currentFilter = 0;
@@ -39,7 +39,7 @@ public class Program
     private static string _solutionPath = string.Empty;
 
     /// <summary>目前資料來源（經過篩選後）。</summary>
-    private static List<string> _filteredResults = new();
+    private static List<MethodResult> _filteredResults = new();
 
     /// <summary>
     /// 應用程式主進入點。
@@ -281,13 +281,14 @@ public class Program
                 string checkbox = isChecked ? $"{GREEN}[x]{RESET}" : "[ ]";
                 string cursorMark = isCursor ? $"{YELLOW}▸{RESET} " : "  ";
 
-                string line = _filteredResults[i];
+                var method = _filteredResults[i];
+                string line = method.DisplayName;
                 if (line.Length > 66) line = line.Substring(0, 63) + "...";
 
                 string color = "";
-                if (line.StartsWith("public ")) color = CYAN;
-                else if (line.StartsWith("private ")) color = GREEN;
-                else if (line.StartsWith("protected ")) color = YELLOW;
+                if (method.Signature.StartsWith("public ", StringComparison.OrdinalIgnoreCase)) color = CYAN;
+                else if (method.Signature.StartsWith("private ", StringComparison.OrdinalIgnoreCase)) color = GREEN;
+                else if (method.Signature.StartsWith("protected ", StringComparison.OrdinalIgnoreCase)) color = YELLOW;
 
                 Console.Write($"  │ {cursorMark}{checkbox} {color}{line}{RESET}");
                 int padding = 72 - line.Length;
@@ -357,9 +358,9 @@ public class Program
         {
             return _currentFilter switch
             {
-                1 => method.StartsWith("public ", StringComparison.OrdinalIgnoreCase),
-                2 => method.StartsWith("private ", StringComparison.OrdinalIgnoreCase),
-                3 => method.StartsWith("protected ", StringComparison.OrdinalIgnoreCase),
+                1 => method.Signature.StartsWith("public ", StringComparison.OrdinalIgnoreCase),
+                2 => method.Signature.StartsWith("private ", StringComparison.OrdinalIgnoreCase),
+                3 => method.Signature.StartsWith("protected ", StringComparison.OrdinalIgnoreCase),
                 _ => true
             };
         }).ToList();
@@ -422,26 +423,27 @@ public class Program
         if (_selectedIndices.Count == 0 || string.IsNullOrEmpty(_solutionPath))
             return;
 
-        var signatures = _selectedIndices
+        var methods = _selectedIndices
             .Where(i => i >= 0 && i < _filteredResults.Count)
             .Select(i => _filteredResults[i])
             .ToList();
 
-        if (signatures.Count == 0) return;
+        if (methods.Count == 0) return;
 
         // 確認對話框
         Console.Write(CLEAR_SCREEN);
         Console.Write(string.Format(MOVE_CURSOR, 1, 1));
         Console.WriteLine($"\n  {BOLD}確認刪除{RESET}\n");
-        Console.WriteLine($"  即將刪除 {signatures.Count} 個方法：\n");
+        Console.WriteLine($"  即將刪除 {methods.Count} 個方法：\n");
 
-        foreach (var sig in signatures.Take(10))
+        foreach (var method in methods.Take(10))
         {
-            string display = sig.Length > 65 ? sig.Substring(0, 62) + "..." : sig;
+            string display = method.DisplayName;
+            display = display.Length > 65 ? display.Substring(0, 62) + "..." : display;
             Console.WriteLine($"    {RED}•{RESET} {display}");
         }
-        if (signatures.Count > 10)
-            Console.WriteLine($"    ... 還有 {signatures.Count - 10} 個");
+        if (methods.Count > 10)
+            Console.WriteLine($"    ... 還有 {methods.Count - 10} 個");
 
         Console.WriteLine($"\n  {YELLOW}如有實作介面，介面方法也會一併刪除。{RESET}");
         Console.Write($"\n  確定刪除？ {BOLD}(Y/N){RESET}: ");
@@ -453,7 +455,7 @@ public class Program
 
         try
         {
-            var (result, message) = await ReferenceChecker.RemoveMethodsAsync(_solutionPath, signatures);
+            var (result, message) = await ReferenceChecker.RemoveMethodsAsync(_solutionPath, methods);
 
             if (result == RemoveResult.Success)
             {

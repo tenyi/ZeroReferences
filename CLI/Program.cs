@@ -33,7 +33,7 @@ public class Program
             Console.WriteLine($"\n找到 {unusedMethods.Count} 個未參照方法:\n");
             foreach (var method in unusedMethods)
             {
-                Console.WriteLine($"  {method}");
+                Console.WriteLine($"  {method.DisplayName}");
             }
         }
         catch (Exception ex)

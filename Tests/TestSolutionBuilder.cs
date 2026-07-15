@@ -69,6 +69,67 @@ EndGlobal
     }
 
     /// <summary>
+    /// 建立包含兩個獨立專案的臨時解決方案。
+    /// </summary>
+    public static async Task<string> CreateMultiProjectSolutionAsync(
+        (string projectName, string fileName, string code)[] projects)
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"ZeroRefsTest_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+
+        var projectEntries = new List<string>();
+        var configurationEntries = new List<string>();
+
+        for (var index = 0; index < projects.Length; index++)
+        {
+            var (projectName, fileName, code) = projects[index];
+            var projectDir = Path.Combine(tempDir, projectName);
+            Directory.CreateDirectory(projectDir);
+
+            var projectFileName = $"{projectName}.csproj";
+            var projectFilePath = Path.Combine(projectDir, projectFileName);
+            var csprojContent = @"<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+</Project>";
+            await File.WriteAllTextAsync(projectFilePath, csprojContent);
+            await File.WriteAllTextAsync(Path.Combine(projectDir, fileName), code);
+
+            var projectGuid = $"{{A1B2C3D4-E5F6-7890-ABCD-{index + 1:D12}}}";
+            projectEntries.Add(
+                $"Project(\"{{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}}\") = \"{projectName}\", \"{projectName}/{projectFileName}\", \"{projectGuid}\"\nEndProject");
+            configurationEntries.Add(
+                $"        {projectGuid}.Debug|Any CPU.ActiveCfg = Debug|Any CPU\n" +
+                $"        {projectGuid}.Debug|Any CPU.Build.0 = Debug|Any CPU");
+        }
+
+        var slnContent = $@"Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+{string.Join("\n", projectEntries)}
+Global
+    GlobalSection(SolutionConfigurationPlatforms) = preSolution
+        Debug|Any CPU = Debug|Any CPU
+    EndGlobalSection
+    GlobalSection(ProjectConfigurationPlatforms) = postSolution
+{string.Join("\n", configurationEntries)}
+    EndGlobalSection
+    GlobalSection(SolutionProperties) = preSolution
+        SolutionDir = {tempDir}
+    EndGlobalSection
+EndGlobal
+";
+
+        var slnPath = Path.Combine(tempDir, "TestSolution.sln");
+        await File.WriteAllTextAsync(slnPath, slnContent);
+        return slnPath;
+    }
+
+    /// <summary>
     /// 建立臨時的單一專案檔案（無需 sln）。</summary>
     public static async Task<string> CreateProjectAsync(params (string fileName, string code)[] files)
     {
