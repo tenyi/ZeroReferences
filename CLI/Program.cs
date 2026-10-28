@@ -11,15 +11,16 @@ public class Program
     /// 計算引用次數，並輸出引用次數為零且不屬於 Controller / Test 類別的方法。
     /// </summary>
     /// <param name="args">命令列參數（目前未使用）。</param>
-    static async Task Main(string[] args)
+    /// <returns>成功回傳 0；參數錯誤或分析失敗回傳 1。</returns>
+    static async Task<int> Main(string[] args)
     {
         // 檢查命令列參數
         if (args.Length == 0)
         {
-            Console.WriteLine("用法: ZeroReferences <solution_or_project_path>");
-            Console.WriteLine("例如: ZeroReferences C:\\Path\\To\\Solution.sln");
-            Console.WriteLine("      ZeroReferences C:\\Path\\To\\Project.csproj");
-            return;
+            Console.Error.WriteLine("用法: ZeroReferences <solution_or_project_path>");
+            Console.Error.WriteLine("例如: ZeroReferences C:\\Path\\To\\Solution.sln");
+            Console.Error.WriteLine("      ZeroReferences C:\\Path\\To\\Project.csproj");
+            return 1;
         }
 
         string solutionPath = args[0];
@@ -35,12 +36,15 @@ public class Program
             {
                 Console.WriteLine($"  {method.DisplayName}");
             }
+
+            return 0;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"錯誤: {ex.Message}");
+            Console.Error.WriteLine($"錯誤: {ex.Message}");
             if (ex.InnerException is not null)
-                Console.WriteLine($"  內部例外: {ex.InnerException.Message}");
+                Console.Error.WriteLine($"  內部例外: {ex.InnerException.Message}");
+            return 1;
         }
     }
 }

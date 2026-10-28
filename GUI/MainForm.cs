@@ -177,6 +177,10 @@
                     ApplyAccessibilityFilter();
                 }
             }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"檢查過程發生錯誤：{ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
             finally
             {
                 checkProjectButton.Enabled = true;
@@ -326,6 +330,10 @@
                 {
                     MessageBox.Show(message, "刪除失敗", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"刪除過程發生錯誤：{ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
             {

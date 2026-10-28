@@ -143,8 +143,10 @@ namespace ZeroReferences
             }
 
             // ===== 建立工作區並開啟解決方案或專案 =====
-            using var workspace = CreateWorkspace();
+            using var workspace = CreateWorkspace(out var loadFailures);
             var solution = await OpenSolutionOrProjectAsync(workspace, solutionPath);
+            if (loadFailures.Count > 0)
+                throw new InvalidOperationException(FormatLoadFailureMessage(loadFailures));
 
             // ===== 遍歷所有方法並檢查引用情形 =====
             foreach (var (project, document, method, symbol) in await EnumerateMethodsAsync(solution))
@@ -181,6 +183,8 @@ namespace ZeroReferences
                 }
             }
 
+            if (loadFailures.Count > 0)
+                throw new InvalidOperationException(FormatLoadFailureMessage(loadFailures));
             return list;
         }
 
@@ -197,8 +201,10 @@ namespace ZeroReferences
             string solutionPath, IReadOnlyCollection<MethodResult> methods)
         {
             // ===== 建立工作區並開啟解決方案或專案 =====
-            using var workspace = CreateWorkspace();
+            using var workspace = CreateWorkspace(out var loadFailures);
             var solution = await OpenSolutionOrProjectAsync(workspace, solutionPath);
+            if (loadFailures.Count > 0)
+                return (RemoveResult.Failed, FormatLoadFailureMessage(loadFailures));
 
             // 用於記錄需要從各文件中刪除的方法語法節點
             var nodesToRemove = new Dictionary<Microsoft.CodeAnalysis.DocumentId, HashSet<MethodDeclarationSyntax>>();
@@ -212,8 +218,12 @@ namespace ZeroReferences
             {
                 foreach (var (project, document, method, symbol) in allMethods)
                 {
-                    if (!IsSameDeclaration(target, project, document, method))
+                    if (!IsSameDeclaration(target, project, document, method, symbol))
                         continue;
+
+                    // 檔案在掃描後可能已變動；內容不符或已有引用時視為過期，不刪除
+                    if (!await IsStillUnreferencedAsync(solution, symbol))
+                        break;
 
                     foundMethods.Add(target);
                     AddNodeToRemove(document.Id, method, nodesToRemove);
@@ -227,7 +237,7 @@ namespace ZeroReferences
             var notFound = methods.Where(method => !foundMethods.Contains(method)).ToList();
             if (nodesToRemove.Count == 0)
             {
-                return (RemoveResult.Failed, $"找不到任何指定的方法。");
+                return (RemoveResult.Failed, $"找不到任何指定的方法，或檔案已變動、方法已有引用，請重新掃描。");
             }
 
             // ===== 執行刪除操作 =====
@@ -262,6 +272,16 @@ namespace ZeroReferences
                 updatedSolution = updatedSolution.WithDocumentSyntaxRoot(documentId, currentRoot);
             }
 
+            // 在記憶體中驗證，通過後才寫入檔案。
+            var originalErrors = await GetCompilationErrorsAsync(solution);
+            if (originalErrors.Count > 0)
+                return (RemoveResult.Failed, "原始方案有編譯錯誤，已停止刪除：" + string.Join("；", originalErrors.Take(3)));
+            var updatedErrors = await GetCompilationErrorsAsync(updatedSolution);
+            if (loadFailures.Count > 0)
+                return (RemoveResult.Failed, FormatLoadFailureMessage(loadFailures));
+            if (updatedErrors.Count > 0)
+                return (RemoveResult.Failed, "刪除後會產生編譯錯誤，未寫入任何變更：" + string.Join("；", updatedErrors.Take(3)));
+
             // ===== 套用變更 =====
             bool applied = workspace.TryApplyChanges(updatedSolution);
             if (applied)
@@ -289,68 +309,25 @@ namespace ZeroReferences
         public static async Task<(RemoveResult result, string message)> RemoveMethodAsync(
             string solutionPath, MethodResult method)
         {
-            // ===== 建立工作區並開啟解決方案或專案 =====
-            using var workspace = CreateWorkspace();
-            var solution = await OpenSolutionOrProjectAsync(workspace, solutionPath);
+            return await RemoveMethodsAsync(solutionPath, new[] { method });
+        }
 
-            // 用於記錄需要從各文件中刪除的方法語法節點
-            var nodesToRemove = new Dictionary<Microsoft.CodeAnalysis.DocumentId, HashSet<MethodDeclarationSyntax>>();
-
-            // ===== 依專案、文件與宣告位置尋找目標方法 =====
-            var allMethods = await EnumerateMethodsAsync(solution);
-            foreach (var (project, document, syntax, symbol) in allMethods)
+        private static async Task<List<string>> GetCompilationErrorsAsync(Solution solution)
+        {
+            var errors = new List<string>();
+            foreach (var project in solution.Projects)
             {
-                if (IsSameDeclaration(method, project, document, syntax))
+                var compilation = await project.GetCompilationAsync();
+                if (compilation == null)
                 {
-                    AddNodeToRemove(document.Id, syntax, nodesToRemove);
-                    await MarkRelatedMethodsForRemoval(solution, symbol, nodesToRemove);
-                    break;
+                    errors.Add($"{project.Name} 無法取得 Compilation");
+                    continue;
                 }
+                errors.AddRange(compilation.GetDiagnostics()
+                    .Where(d => d.Severity == DiagnosticSeverity.Error)
+                    .Select(d => $"{project.Name}: {d}"));
             }
-
-            // ===== 若找不到任何方法，回傳失敗 =====
-            if (nodesToRemove.Count == 0)
-            {
-                return (RemoveResult.Failed, $"找不到方法：{method.DisplayName}");
-            }
-
-            // ===== 執行刪除操作 =====
-            var updatedSolution = solution;
-
-            foreach (var kvp in nodesToRemove)
-            {
-                var documentId = kvp.Key;
-                var nodes = kvp.Value;
-                var doc = updatedSolution.GetDocument(documentId);
-                if (doc == null) continue;
-
-                var root = await doc.GetSyntaxRootAsync();
-                if (root == null) continue;
-
-                var currentRoot = root.TrackNodes(nodes);
-                foreach (var originalNode in nodes)
-                {
-                    var currentNode = currentRoot.GetCurrentNode(originalNode);
-                    if (currentNode != null)
-                    {
-                        currentRoot = currentRoot.RemoveNode(
-                            currentNode, SyntaxRemoveOptions.KeepNoTrivia)!;
-                    }
-                }
-
-                updatedSolution = updatedSolution.WithDocumentSyntaxRoot(documentId, currentRoot);
-            }
-
-            // ===== 套用變更到工作區 =====
-            bool applied = workspace.TryApplyChanges(updatedSolution);
-            if (applied)
-            {
-                return (RemoveResult.Success, $"已成功刪除方法：{method.DisplayName}");
-            }
-            else
-            {
-                return (RemoveResult.Failed, "套用變更失敗。");
-            }
+            return errors;
         }
 
         /// <summary>
@@ -446,16 +423,28 @@ namespace ZeroReferences
 
         /// <summary>
         /// 判斷結果模型是否指向指定的唯一方法宣告。
+        /// 除了位置，也比對簽名，避免掃描後檔案變動使同一位置落在不同方法上。
         /// </summary>
         private static bool IsSameDeclaration(
             MethodResult target,
             Project project,
             Document document,
-            MethodDeclarationSyntax method)
+            MethodDeclarationSyntax method,
+            IMethodSymbol symbol)
         {
             return string.Equals(target.ProjectPath, project.FilePath, StringComparison.Ordinal)
                 && string.Equals(target.DocumentPath, document.FilePath, StringComparison.Ordinal)
-                && target.SpanStart == method.SpanStart;
+                && target.SpanStart == method.SpanStart
+                && string.Equals(target.Signature, GetMethodSignature(symbol), StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// 刪除前重新確認方法仍沒有任何引用。
+        /// </summary>
+        private static async Task<bool> IsStillUnreferencedAsync(Solution solution, IMethodSymbol symbol)
+        {
+            var references = await SymbolFinder.FindReferencesAsync(symbol, solution);
+            return !references.Any(r => r.Locations.Any());
         }
 
         /// <summary>
@@ -466,10 +455,40 @@ namespace ZeroReferences
             IMethodSymbol symbol,
             Dictionary<Microsoft.CodeAnalysis.DocumentId, HashSet<MethodDeclarationSyntax>> nodesToRemove)
         {
+            var allMethods = await EnumerateMethodsAsync(solution);
+            var processed = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);
+            await MarkDirectRelatedMethodsForRemoval(solution, symbol, nodesToRemove);
+            processed.Add(symbol);
+            while (true)
+            {
+                var pending = allMethods.Where(m =>
+                    nodesToRemove.TryGetValue(m.document.Id, out var nodes) && nodes.Contains(m.method)
+                    && !processed.Contains(m.symbol)).ToList();
+                if (pending.Count == 0) break;
+                foreach (var item in pending)
+                {
+                    if (processed.Add(item.symbol))
+                        await MarkDirectRelatedMethodsForRemoval(solution, item.symbol, nodesToRemove);
+                }
+            }
+        }
+
+        private static async Task MarkDirectRelatedMethodsForRemoval(
+            Solution solution,
+            IMethodSymbol symbol,
+            Dictionary<Microsoft.CodeAnalysis.DocumentId, HashSet<MethodDeclarationSyntax>> nodesToRemove)
+        {
+            // 直接刪除介面宣告時，連同所有實作（含 explicit）一併刪除，避免留下無法編譯的成員
+            if (symbol.ContainingType?.TypeKind == TypeKind.Interface)
+            {
+                await FindAllImplementingMethodsForRemoval(solution, symbol, nodesToRemove);
+            }
+
             foreach (var ifaceMethod in symbol.ExplicitInterfaceImplementations)
             {
                 await FindAndMarkInterfaceMethodForRemoval(
                     solution, ifaceMethod, nodesToRemove);
+                await FindAllImplementingMethodsForRemoval(solution, ifaceMethod, nodesToRemove);
             }
 
             await FindAndMarkImplicitInterfaceMethodsForRemoval(
@@ -527,15 +546,28 @@ namespace ZeroReferences
         }
 
         /// <summary>
-        /// 建立 MSBuildWorkspace 並註冊診斷事件，記錄載入失敗資訊至 Debug 輸出。
+        /// 建立 MSBuildWorkspace 並註冊診斷事件，記錄載入診斷至 Debug 輸出，
+        /// 並將載入診斷（含 Warning，專案可能不完整）收集到 <paramref name="failures"/>。
         /// </summary>
-        private static MSBuildWorkspace CreateWorkspace()
+        private static MSBuildWorkspace CreateWorkspace(out List<string> failures)
         {
+            var collected = new List<string>();
+            failures = collected;
             var workspace = MSBuildWorkspace.Create();
             workspace.RegisterWorkspaceFailedHandler(e =>
-                System.Diagnostics.Debug.WriteLine($"[ZeroReferences] MSBuild 診斷: {e.Diagnostic}"));
+            {
+                System.Diagnostics.Debug.WriteLine($"[ZeroReferences] MSBuild 診斷: {e.Diagnostic}");
+                // 部分 MSBuild 載入問題以 Warning 回報，仍可能遺漏文件或引用。
+                collected.Add(e.Diagnostic.Message);
+            });
             return workspace;
         }
+
+        /// <summary>
+        /// 組合載入失敗時拒絕刪除的訊息。專案載入不完整時，引用分析可能漏掉引用端，刪除並不安全。
+        /// </summary>
+        private static string FormatLoadFailureMessage(IReadOnlyList<string> failures) =>
+            $"專案載入不完整（{failures.Count} 個失敗），已停止作業，請修正載入問題後重新掃描：{string.Join("；", failures.Distinct().Take(3))}";
 
         /// <summary>
         /// 根據副檔名決定開啟解決方案或專案，回傳 Solution 物件。

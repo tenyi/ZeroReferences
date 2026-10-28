@@ -35,6 +35,9 @@ public class Program
     /// <summary>游標目前所在的索引位置（獨立於勾選狀態）。</summary>
     private static int _cursorIndex = 0;
 
+    /// <summary>清單可視範圍的起始索引，繪製時依游標位置調整。</summary>
+    private static int _scrollOffset = 0;
+
     /// <summary>目前解決方案路徑。</summary>
     private static string _solutionPath = string.Empty;
 
@@ -271,9 +274,14 @@ public class Program
         else
         {
             int maxDisplay = Math.Max(Console.WindowHeight - 22, 3);
-            int displayEnd = Math.Min(_filteredResults.Count, maxDisplay);
 
-            for (int i = 0; i < displayEnd; i++)
+            // 讓游標保持在可視範圍內
+            if (_cursorIndex < _scrollOffset) _scrollOffset = _cursorIndex;
+            if (_cursorIndex >= _scrollOffset + maxDisplay) _scrollOffset = _cursorIndex - maxDisplay + 1;
+            _scrollOffset = Math.Clamp(_scrollOffset, 0, Math.Max(_filteredResults.Count - maxDisplay, 0));
+            int displayEnd = Math.Min(_filteredResults.Count, _scrollOffset + maxDisplay);
+
+            for (int i = _scrollOffset; i < displayEnd; i++)
             {
                 bool isChecked = _selectedIndices.Contains(i);
                 bool isCursor = i == _cursorIndex;
@@ -297,7 +305,10 @@ public class Program
             }
         }
 
-        Console.Write("  └───────────────────────────────────────────────────────────────────────┘\n\n");
+        Console.Write("  └───────────────────────────────────────────────────────────────────────┘\n");
+        if (_filteredResults.Count > 0)
+            Console.Write($"  第 {_cursorIndex + 1} / {_filteredResults.Count} 筆\n");
+        Console.Write("\n");
 
         // 底部提示
         if (string.IsNullOrEmpty(_solutionPath))

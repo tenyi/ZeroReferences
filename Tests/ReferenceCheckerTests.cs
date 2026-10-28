@@ -256,6 +256,66 @@ namespace TestNs {
     }
 
     /// <summary>
+    /// 驗證直接刪除介面宣告時，explicit 實作也會一併刪除，不留下無法編譯的成員。
+    /// </summary>
+    [Fact]
+    public async Task RemoveMethodAsync_InterfaceDeclaration_RemovesExplicitImplementation()
+    {
+        var code = @"
+namespace TestNs {
+    public interface IWorker {
+        void Execute();
+    }
+    public class Worker : IWorker {
+        void IWorker.Execute() { }
+    }
+}";
+        var slnPath = await TestSolutionBuilder.CreateSolutionAsync(("Code.cs", code));
+        try
+        {
+            var before = await ReferenceChecker.Check(slnPath);
+            var method = before.First(r => r.Signature.Contains("IWorker.Execute"));
+
+            var (result, _) = await ReferenceChecker.RemoveMethodAsync(slnPath, method);
+            Assert.Equal(RemoveResult.Success, result);
+
+            var text = await File.ReadAllTextAsync(Path.Combine(Path.GetDirectoryName(slnPath)!, "Code.cs"));
+            Assert.DoesNotContain("Execute", text);
+        }
+        finally
+        {
+            TestSolutionBuilder.Cleanup(slnPath);
+        }
+    }
+
+    /// <summary>
+    /// 驗證掃描後檔案被修改（同一位置變成不同方法）時，拒絕刪除。
+    /// </summary>
+    [Fact]
+    public async Task RemoveMethodAsync_FileChangedAfterScan_RefusesToRemove()
+    {
+        var code = "namespace TestNs { public class C { public void First() { } public void Second() { } } }";
+        var slnPath = await TestSolutionBuilder.CreateSolutionAsync(("Code.cs", code));
+        try
+        {
+            var before = await ReferenceChecker.Check(slnPath);
+            var first = before.First(r => r.Signature.Contains("First"));
+
+            // 掃描後將 First 改名為 Other，使原位置的簽名不同
+            var codePath = Path.Combine(Path.GetDirectoryName(slnPath)!, "Code.cs");
+            await File.WriteAllTextAsync(codePath, code.Replace("First", "Other"));
+
+            var (result, _) = await ReferenceChecker.RemoveMethodAsync(slnPath, first);
+            Assert.Equal(RemoveResult.Failed, result);
+            Assert.Contains("Other", await File.ReadAllTextAsync(codePath));
+        }
+        finally
+        {
+            TestSolutionBuilder.Cleanup(slnPath);
+        }
+    }
+
+    /// <summary>
     /// 驗證不同專案中完整簽名相同的方法不會被一起刪除。
     /// </summary>
     [Fact]
@@ -434,4 +494,62 @@ namespace TestNs {
             TestSolutionBuilder.Cleanup(slnPath);
         }
     }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RemoveMethods_CompilationErrors_LeavesFileUnchanged(bool introduceAfterRemoval)
+    {
+        var code = "public class C { public void Unused() { } public void Broken() { Missing(); } }";
+        // 刪除 partial 方法的定義會留下實作，編譯驗證必須攔截。
+        if (introduceAfterRemoval)
+            code = "public partial class C { partial void Unused(); partial void Unused() { } }";
+        var path = await TestSolutionBuilder.CreateSolutionAsync(("Code.cs", code));
+        try
+        {
+            var results = await ReferenceChecker.Check(path);
+            var target = results.First(r => r.Signature.Contains("C.Unused"));
+            var (result, message) = await ReferenceChecker.RemoveMethodsAsync(path, new[] { target });
+            Assert.Equal(RemoveResult.Failed, result);
+            Assert.Contains("編譯錯誤", message);
+            Assert.Equal(code, await File.ReadAllTextAsync(Path.Combine(Path.GetDirectoryName(path)!, "Code.cs")));
+        }
+        finally { TestSolutionBuilder.Cleanup(path); }
+    }
+
+    [Fact]
+    public async Task RemoveMethod_ExplicitImplementation_RemovesSiblingsAndOverrides()
+    {
+        var code = "public interface I { void Run(); } public class A : I { void I.Run() { } } public class B : I { public virtual void Run() { } } public class C : B { public override void Run() { } }";
+        var path = await TestSolutionBuilder.CreateSolutionAsync(("Code.cs", code));
+        try
+        {
+            var results = await ReferenceChecker.Check(path);
+            var target = results.First(r => r.Signature.Contains("A.") && r.Signature.Contains("Run"));
+            var (result, _) = await ReferenceChecker.RemoveMethodAsync(path, target);
+            Assert.Equal(RemoveResult.Success, result);
+            Assert.DoesNotContain("Run", await File.ReadAllTextAsync(Path.Combine(Path.GetDirectoryName(path)!, "Code.cs")));
+        }
+        finally { TestSolutionBuilder.Cleanup(path); }
+    }
+
+    [Fact]
+    public async Task LoadFailure_StopsScanAndRemoval_LeavesFileUnchanged()
+    {
+        var code = "public class C { public void Unused() { } }";
+        var path = await TestSolutionBuilder.CreateSolutionAsync(("Code.cs", code));
+        try
+        {
+            var target = (await ReferenceChecker.Check(path)).First(r => r.Signature.Contains("Unused"));
+            var solutionText = await File.ReadAllTextAsync(path);
+            var missingProject = "Project(\"{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}\") = \"Missing\", \"Missing.csproj\", \"{A1B2C3D4-E5F6-7890-ABCD-000000000002}\"\nEndProject\n";
+            await File.WriteAllTextAsync(path, solutionText.Replace("\nGlobal\n", "\n" + missingProject + "Global\n"));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => ReferenceChecker.Check(path));
+            var (result, message) = await ReferenceChecker.RemoveMethodAsync(path, target);
+            Assert.Equal(RemoveResult.Failed, result);
+            Assert.Contains("載入不完整", message);
+            Assert.Equal(code, await File.ReadAllTextAsync(Path.Combine(Path.GetDirectoryName(path)!, "Code.cs")));
+        }
+        finally { TestSolutionBuilder.Cleanup(path); }
+    }
+
 }
